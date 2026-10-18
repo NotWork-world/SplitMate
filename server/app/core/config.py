@@ -51,7 +51,8 @@ class Settings(BaseSettings):
 
     @property
     def google_client_id_list(self) -> list[str]:
-        return [c.strip() for c in self.google_client_ids.split(",") if c.strip()]
+        # Real IDs end in ".apps.googleusercontent.com"; placeholders like "none" mean "off".
+        return [c.strip() for c in self.google_client_ids.split(",") if c.strip().endswith(".apps.googleusercontent.com")]
 
     @property
     def is_production(self) -> bool:
