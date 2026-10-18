@@ -151,7 +151,7 @@ def test_export_and_delete_account(make_user, client):
 def test_production_refuses_default_secrets(monkeypatch):
     from app.core.config import Settings
 
-    s = Settings(env="production", database_url="sqlite:///x.db")
+    s = Settings(_env_file=None, env="production", database_url="sqlite:///x.db")  # ignore a local .env
     try:
         s.check_production_safety()
         raise AssertionError("should refuse")
