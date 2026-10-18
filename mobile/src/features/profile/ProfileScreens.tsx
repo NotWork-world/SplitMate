@@ -421,7 +421,7 @@ export function PrivacyScreen() {
         </Text>
         <Text variant="heading">Receipts</Text>
         <Text variant="body" tone="muted">
-          Receipt text is read on your phone. If you attach the photo to an expense, it's stored privately and shown only to members of that group through short-lived links.
+          Receipt text is read on your phone. If you attach the photo to a bill, it's kept privately only while you split it, shown only to that group through short-lived links, and deleted once the bill is finalised.
         </Text>
         <Text variant="heading">Your controls</Text>
         <Text variant="body" tone="muted">

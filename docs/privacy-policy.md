@@ -28,7 +28,7 @@ SplitMate does not move money and does not see your bank or UPI accounts. Openin
 
 ## Where data is kept
 
-The server runs on Render (Singapore region), the database on Neon (PostgreSQL), and receipt photos in private S3-compatible storage. All traffic uses HTTPS. Your sign-in session is stored in Android's secure keystore on your phone.
+The server runs on Render (Singapore region), the database on Neon (PostgreSQL), and receipt photos on the server's private disk only until the bill is finalised or cancelled, when the photo is deleted (the typed-in items and prices stay). Unused photos are deleted after two days. All traffic uses HTTPS. Your sign-in session is stored in Android's secure keystore on your phone.
 
 ## Your choices
 

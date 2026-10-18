@@ -53,14 +53,20 @@ def create_expense(
 ):
     """Create a draft. With ``?finalize=true`` the draft is finalised in the same transaction."""
 
+    made: list[uuid.UUID] = []
+
     def work():
         e = svc.create_draft(db, user, group_id, body)
         if finalize:
             e = svc.finalize(db, user, e.id, e.version, client_total_minor)
+        made.append(e.id)
         e, me = svc.load(db, e.id, user)
         return expense_out(db, e, me)
 
-    return idempotency.run(db, user, idempotency_key, f"expense.create:{group_id}:{finalize}", body, work, 201)
+    out = idempotency.run(db, user, idempotency_key, f"expense.create:{group_id}:{finalize}", body, work, 201)
+    if made and finalize:
+        _drop_photo(db, made[0])
+    return out
 
 
 @router.get("/groups/{group_id}/expenses")
@@ -150,7 +156,9 @@ def finalize_expense(
         return expense_out(db, e, me)
 
     try:
-        return idempotency.run(db, user, idempotency_key, f"expense.finalize:{expense_id}", body, work)
+        out = idempotency.run(db, user, idempotency_key, f"expense.finalize:{expense_id}", body, work)
+        _drop_photo(db, expense_id)
+        return out
     except IntegrityError:
         # A concurrent request finalised this version first (unique version snapshot);
         # our transaction rolled back whole, so report the winner's result.
@@ -169,5 +177,12 @@ def cancel_expense(
     db.commit()
     if e is None:
         return Response(status_code=204)
+    _drop_photo(db, expense_id)
     e, me = svc.load(db, expense_id, user)
     return expense_out(db, e, me)
+
+
+def _drop_photo(db: Session, expense_id: uuid.UUID) -> None:
+    e = db.get(Expense, expense_id)
+    if e is not None:
+        svc.discard_receipt_image(db, e)

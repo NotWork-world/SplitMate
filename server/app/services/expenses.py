@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..core.errors import ApiError, conflict, forbidden, invalid, not_found
 from ..deps import group_member_ids, membership
+from ..integrations.storage import get_storage
 from ..models import (
     Expense,
     ExpenseAllocation,
@@ -357,6 +358,24 @@ def finalize(db: Session, user: User, expense_id: uuid.UUID, expected_version: i
     activity.audit(db, actor=user, action="expense.finalized", entity_type="expense", entity_id=e.id,
                    data={"version": e.version, "total_minor": e.total_minor})
     return e
+
+
+def discard_receipt_image(db: Session, e: Expense) -> None:
+    """The bill photo is only needed while splitting. Once the bill is final (or dropped),
+    delete the file so storage never grows; the items, prices and tax stay in the database.
+    Call after the expense is committed, so a failed save never loses the photo."""
+    if e.receipt_id is None or e.status == "draft":
+        return
+    rec = db.get(ReceiptAttachment, e.receipt_id)
+    e.receipt_id = None
+    if rec is not None and rec.deleted_at is None:
+        try:
+            get_storage().delete(rec.storage_key)
+        except Exception:  # storage hiccup: the sweep in receipts.upload retries later
+            db.commit()
+            return
+        rec.deleted_at = utcnow()
+    db.commit()
 
 
 def _persist_finalization(

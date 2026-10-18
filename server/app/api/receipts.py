@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import io
 import uuid
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import Response
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core.config import get_settings
@@ -18,7 +20,7 @@ from ..db import get_db
 from ..deps import current_user, membership
 from ..integrations.receipt_parser import OcrLine, parse_receipt
 from ..integrations.storage import get_storage
-from ..models import ReceiptAttachment, User, utcnow
+from ..models import Expense, ReceiptAttachment, User, utcnow
 from ..money.currency import SUPPORTED_CURRENCIES
 
 router = APIRouter(tags=["receipts"])
@@ -73,7 +75,30 @@ async def upload(group_id: uuid.UUID, file: UploadFile = File(...), user: User =
     )
     db.add(rec)
     db.commit()
+    _sweep_unused(db, user)
     return {"id": rec.id, "content_type": rec.content_type, "size_bytes": rec.size_bytes}
+
+
+def _sweep_unused(db: Session, user: User) -> None:
+    """Photos are temporary: drop this person's uploads older than two days that no draft uses
+    (abandoned scans, or a delete that failed after a bill was finalised)."""
+    in_use = select(Expense.receipt_id).where(Expense.status == "draft", Expense.receipt_id.is_not(None))
+    stale = db.scalars(
+        select(ReceiptAttachment).where(
+            ReceiptAttachment.uploaded_by == user.id,
+            ReceiptAttachment.deleted_at.is_(None),
+            ReceiptAttachment.created_at < utcnow() - timedelta(days=2),
+            ReceiptAttachment.id.not_in(in_use),
+        ).limit(50)
+    ).all()
+    for rec in stale:
+        try:
+            get_storage().delete(rec.storage_key)
+        except Exception:
+            continue
+        rec.deleted_at = utcnow()
+    if stale:
+        db.commit()
 
 
 def _receipt(db: Session, receipt_id: uuid.UUID, user: User) -> ReceiptAttachment:

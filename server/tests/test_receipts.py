@@ -132,3 +132,28 @@ def test_upload_private_access_and_isolation(client, make_user):
 
     assert a.delete(f"/receipts/{rid}").status_code == 204
     assert a.get(f"/receipts/{rid}/url").status_code == 404
+
+
+def test_photo_is_deleted_once_the_bill_is_final(client, make_user):
+    """Bill photos are temporary: finalising deletes the file; the itemised bill stays."""
+    a = make_user("Asha")
+    g = a.post("/groups", {"name": "Dinner"}).json()
+    rid = client.post(f"/api/groups/{g['id']}/receipts", headers=a.h(),
+                      files={"file": ("r.png", png_bytes(), "image/png")}).json()["id"]
+    me = g["my_member_id"]
+    body = {"title": "Dinner", "category": "food", "expense_date": "2026-10-01", "currency": "INR",
+            "items": [{"client_id": "x", "name": "Thali", "unit_price_minor": 20000, "consumers": [{"member_id": me}]}],
+            "payers": [{"member_id": me}], "receipt_id": rid}
+    d = a.post(f"/groups/{g['id']}/expenses", body).json()
+    assert a.get(f"/receipts/{rid}/url").status_code == 200  # still there while it's a draft
+    f = a.post(f"/expenses/{d['id']}/finalize", {"expected_version": d["version"]})
+    assert f.status_code == 200, f.text
+    assert a.get(f"/receipts/{rid}/url").status_code == 404
+    e = a.get(f"/expenses/{d['id']}").json()
+    assert e["status"] == "finalized" and e["items"][0]["name"] == "Thali"
+
+    # Same when the draft is created and finalised in one go.
+    rid2 = client.post(f"/api/groups/{g['id']}/receipts", headers=a.h(),
+                       files={"file": ("r.png", png_bytes(), "image/png")}).json()["id"]
+    assert a.post(f"/groups/{g['id']}/expenses?finalize=true", dict(body, receipt_id=rid2)).status_code == 201
+    assert a.get(f"/receipts/{rid2}/url").status_code == 404

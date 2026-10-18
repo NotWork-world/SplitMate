@@ -20,15 +20,14 @@ services:
         generateValue: true
       - key: SPLITMATE_SIGNING_SECRET
         generateValue: true
+      - key: SPLITMATE_PUBLIC_BASE_URL
+        sync: false # https://<this service>.onrender.com — used in invite links
       - key: SPLITMATE_GOOGLE_CLIENT_IDS
-        sync: false
+        sync: false # the Web OAuth client ID; leave empty to hide Google sign-in
+      # Bill photos are temporary (deleted once the bill is finalised), so the
+      # container's own disk is enough. Switch to "s3" + SPLITMATE_S3_* only if
+      # you later want to keep photos.
       - key: SPLITMATE_STORAGE_BACKEND
-        value: s3
-      - key: SPLITMATE_S3_BUCKET
-        sync: false
-      - key: SPLITMATE_S3_ENDPOINT_URL
-        sync: false
-      - key: SPLITMATE_S3_ACCESS_KEY_ID
-        sync: false
-      - key: SPLITMATE_S3_SECRET_ACCESS_KEY
-        sync: false
+        value: local
+      - key: SPLITMATE_STORAGE_DIR
+        value: /app/storage
