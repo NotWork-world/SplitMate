@@ -33,3 +33,6 @@ mobile/android/.kotlin/
 *.hprof
 mobile/.metro-health-check*
 coverage/
+
+# local working notes
+prompt.md

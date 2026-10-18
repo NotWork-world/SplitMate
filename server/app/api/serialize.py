@@ -26,6 +26,7 @@ def member_out(m: GroupMember, me: GroupMember | None = None) -> MemberOut:
         is_registered=m.user_id is not None,
         avatar_hue=user.avatar_hue if user else (int(m.id.hex[:4], 16) % 360),
         upi_id=user.upi_id if user and m.status == "active" else None,
+        username=user.username if user else None,
     )
 
 

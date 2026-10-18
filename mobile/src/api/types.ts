@@ -4,6 +4,7 @@ export interface User {
   id: string;
   email: string | null;
   display_name: string;
+  username: string | null;
   avatar_hue: number;
   upi_id: string | null;
   default_currency: string;
@@ -30,6 +31,13 @@ export interface Member {
   is_registered: boolean;
   avatar_hue: number;
   upi_id?: string | null;
+  username?: string | null;
+}
+
+export interface PublicUser {
+  username: string;
+  display_name: string;
+  avatar_hue: number;
 }
 
 export interface BalanceLine {

@@ -2,12 +2,12 @@
 
 > "Eat together. Split only what you shared. Know exactly who owes whom."
 
-`prompt.md` is the product specification. This file is the architecture, the
-milestones and the working checklist. It is updated as phases land.
+This file is the architecture, the milestones and the working checklist.
+It is updated as phases land.
 
 ## 0. Starting point (audit, 2026-10-18)
 
-- The repository contained only `prompt.md`: no code, schema, tests or config.
+- The repository started empty: no code, schema, tests or config.
 - The NotWork-world organisation's other app, **KonPDF**, sets the house style:
   bare **React Native + TypeScript** (Redux Toolkit, React Navigation, Jest)
   for Android, a **Python FastAPI** service on **Render** (Dockerfile +

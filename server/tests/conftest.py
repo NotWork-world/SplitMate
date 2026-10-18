@@ -59,7 +59,7 @@ class Api:
 
     def __init__(self, client: TestClient, name: str):
         self.client = client
-        self.email = f"{name.lower()}-{uuid.uuid4().hex[:6]}@example.com"
+        self.email = f"{name.lower().replace(' ', '.')}-{uuid.uuid4().hex[:6]}@example.com"
         r = client.post("/api/auth/register", json={"email": self.email, "password": "correct-horse-9", "display_name": name})
         assert r.status_code == 201, r.text
         body = r.json()

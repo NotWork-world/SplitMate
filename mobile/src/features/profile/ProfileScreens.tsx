@@ -5,6 +5,7 @@ import {launchImageLibrary} from 'react-native-image-picker';
 import BarcodeScanning from '@react-native-ml-kit/barcode-scanning';
 import QRCode from 'react-native-qrcode-svg';
 import {parseUpiQr, upiPayUrl} from '../../payments/upi';
+import {usernameError} from '../../people/invite';
 import {
   errorMessage,
   useChangePasswordMutation,
@@ -64,6 +65,11 @@ export function ProfileScreen({navigation}: any) {
         <Text variant="title" style={{marginTop: space.md}}>
           {user?.display_name}
         </Text>
+        {user?.username ? (
+          <Text variant="bodyStrong" tone="accent" selectable testID="profile-handle">
+            @{user.username}
+          </Text>
+        ) : null}
         <Text variant="small" tone="muted">
           {user?.email ?? 'Signed in with Google'}
         </Text>
@@ -106,6 +112,7 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
   const [changePassword, pw] = useChangePasswordMutation();
   const [name, setName] = useState('');
   const [upi, setUpi] = useState('');
+  const [uname, setUname] = useState('');
   const [currency, setCurrency] = useState('INR');
   const [hue, setHue] = useState(260);
   const [error, setError] = useState<string | null>(null);
@@ -117,12 +124,14 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
     if (me.data) {
       setName(me.data.display_name);
       setUpi(me.data.upi_id ?? '');
+      setUname(me.data.username ?? '');
       setCurrency(me.data.default_currency);
       setHue(me.data.avatar_hue);
     }
   }, [me.data]);
 
-  const upiErr = upi && !/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,64}$/.test(upi.trim()) ? 'That doesn\'t look like a UPI ID (name@bank).' : null;
+  const unameErr = usernameError(uname);
+  const upiErr = upi &&!/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,64}$/.test(upi.trim()) ? 'That doesn\'t look like a UPI ID (name@bank).' : null;
 
   return (
     <Screen
@@ -134,11 +143,11 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
             label="Save"
             size="lg"
             loading={isLoading}
-            disabled={!name.trim() || !!upiErr}
+            disabled={!name.trim() || !!upiErr || !!unameErr || !uname.trim()}
             onPress={async () => {
               setError(null);
               try {
-                const u = await update({display_name: name.trim(), upi_id: upi.trim(), default_currency: currency, avatar_hue: hue}).unwrap();
+                const u = await update({display_name: name.trim(), username: uname.trim().replace(/^@/, '').toLowerCase(), upi_id: upi.trim(), default_currency: currency, avatar_hue: hue}).unwrap();
                 dispatch(userUpdated(u));
                 toast('Profile saved', 'positive');
                 navigation.goBack();
@@ -166,6 +175,18 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
         ))}
       </View>
       <TextField containerStyle={{marginTop: space.lg}} label="Name" value={name} onChangeText={setName} />
+      <TextField
+        containerStyle={{marginTop: space.lg}}
+        label="Username"
+        prefix="@"
+        autoCapitalize="none"
+        autoCorrect={false}
+        value={uname}
+        onChangeText={setUname}
+        error={unameErr}
+        hint="Friends add you to groups with this."
+        testID="profile-username"
+      />
       <TextField
         containerStyle={{marginTop: space.lg}}
         label="UPI ID (optional)"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -14,6 +15,29 @@ from ..integrations.google import get_verifier, verify_with_google
 from ..models import Group, GroupMember, RefreshToken, User, utcnow
 from ..schemas import TokenOut, UserOut
 from . import activity
+
+
+USERNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9_.]{1,18})[a-z0-9]$")
+
+
+def normalize_username(raw: str) -> str:
+    return raw.strip().lstrip("@").lower()
+
+
+def assign_username(db: Session, user: User) -> None:
+    """Give a new account a handle from its name (asha_rao, asha_rao42 if taken). Users can change it later."""
+    if user.username:
+        return
+    base = re.sub(r"[^a-z0-9]+", "_", user.display_name.lower())[:14].strip("_") or "user"
+    if len(base) < 3:
+        base = f"{base}_sm"
+    candidate = base
+    for _ in range(20):
+        if not db.scalar(select(User.id).where(User.username == candidate)):
+            user.username = candidate
+            return
+        candidate = f"{base}{random.randrange(10, 10000)}"
+    user.username = f"user{uuid.uuid4().hex[:12]}"
 
 
 def user_out(user: User) -> UserOut:
@@ -59,6 +83,7 @@ def register(db: Session, email: str, password: str, display_name: str) -> Token
         raise conflict("email_taken", "An account with this email already exists. Sign in instead.")
     user = User(email=email, display_name=display_name, password_hash=hash_password(password),
                 avatar_hue=random.randrange(0, 360))
+    assign_username(db, user)
     db.add(user)
     db.flush()
     _ensure_personal_group(db, user)
@@ -94,6 +119,7 @@ def google_sign_in(db: Session, id_token: str) -> TokenOut:
             google_sub=ident.sub,
             avatar_hue=random.randrange(0, 360),
         )
+        assign_username(db, user)
         db.add(user)
         db.flush()
         _ensure_personal_group(db, user)

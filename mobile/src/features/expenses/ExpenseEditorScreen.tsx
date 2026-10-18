@@ -1,6 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {Pressable, StyleSheet, View} from 'react-native';
-import {CloudOff, Plus, ScanLine, Trash2} from 'lucide-react-native';
+import {CloudOff, Plus, ScanLine, Trash2, UserPlus} from 'lucide-react-native';
 import {useGroupQuery} from '../../api/endpoints';
 import type {ExpensePayload, ItemPayload} from '../../api/types';
 import {
@@ -29,6 +29,7 @@ import {formatMoney, formatQty} from '../../money/currency';
 import type {AppScreen} from '../../navigation/types';
 import {useAppDispatch, useAppSelector} from '../../store';
 import {QueryView} from '../common/QueryView';
+import {AddPeopleSheet} from '../groups/AddPeopleSheet';
 import {draftActions, newItem, preview, todayIso} from './draft';
 import {BillExtras, PayersSection} from './Extras';
 import {ItemSheet, taxLabel} from './ItemSheet';
@@ -50,6 +51,7 @@ export function ExpenseEditorScreen({route, navigation}: AppScreen<'ExpenseEdito
   const [editing, setEditing] = useState<ItemPayload | null>(null);
   const [touched, setTouched] = useState(false);
   const [discard, setDiscard] = useState(false);
+  const [addPeople, setAddPeople] = useState(false);
   const payload = draft?.payload;
   const pv = useMemo(() => (payload ? preview(payload) : null), [payload]);
 
@@ -156,6 +158,22 @@ export function ExpenseEditorScreen({route, navigation}: AppScreen<'ExpenseEdito
               <Chip label="Today" selected={payload.expense_date === todayIso()} onPress={() => change({expense_date: todayIso()})} />
               <Chip label="Yesterday" selected={payload.expense_date === yesterdayIso()} onPress={() => change({expense_date: yesterdayIso()})} />
             </View>
+
+            {!isPersonal && group.data ? (
+              <>
+                <SectionTitle
+                  title={`People · ${members.length}`}
+                  action={<Chip label="Add person" icon={UserPlus} onPress={() => setAddPeople(true)} />}
+                />
+                <AvatarStack people={members.map(m => ({name: m.display_name, hue: m.avatar_hue}))} size={30} />
+                <AddPeopleSheet
+                  visible={addPeople}
+                  onClose={() => setAddPeople(false)}
+                  groupId={group.data.id}
+                  groupName={group.data.name}
+                />
+              </>
+            ) : null}
 
             <SectionTitle title="How to split" />
             <Segmented

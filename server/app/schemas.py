@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 MAX_MINOR = 10**13  # far above any real bill, small enough for JS safe integers
 Money = Field(ge=0, le=MAX_MINOR)
@@ -53,10 +53,14 @@ class RefreshIn(BaseModel):
     refresh_token: str = Field(min_length=10, max_length=200)
 
 
+USERNAME_RE = r"^[a-z0-9](?:[a-z0-9_.]{1,18})[a-z0-9]$"
+
+
 class UserOut(Out):
     id: uuid.UUID
     email: str | None
     display_name: str
+    username: str | None = None
     avatar_hue: int
     upi_id: str | None
     default_currency: str
@@ -76,6 +80,7 @@ class TokenOut(BaseModel):
 
 class ProfileUpdate(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    username: str | None = Field(default=None, min_length=3, max_length=20)
     upi_id: str | None = Field(default=None, max_length=100, pattern=r"^$|^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,64}$")
     default_currency: str | None = Field(default=None, min_length=3, max_length=3)
     avatar_hue: int | None = Field(default=None, ge=0, le=359)
@@ -122,10 +127,25 @@ class GroupUpdate(BaseModel):
 
 
 class MemberCreate(BaseModel):
-    display_name: str = Field(min_length=1, max_length=80)
+    """Add a friend by name (a placeholder until they join) or by SplitMate username."""
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    username: str | None = Field(default=None, min_length=1, max_length=21)
     contact_email: EmailStr | None = None
 
-    _n = field_validator("display_name")(_clean)
+    _n = field_validator("display_name")(lambda v: _clean(v) if v is not None else v)
+
+    @model_validator(mode="after")
+    def _one_of(self):
+        if not self.display_name and not self.username:
+            raise ValueError("Give a name or a username.")
+        return self
+
+
+class PublicUserOut(BaseModel):
+    username: str
+    display_name: str
+    avatar_hue: int
 
 
 class MemberUpdate(BaseModel):
@@ -143,6 +163,7 @@ class MemberOut(Out):
     is_registered: bool = False
     avatar_hue: int = 260
     upi_id: str | None = None  # only if the person added one to their profile
+    username: str | None = None
 
 
 class BalanceLine(BaseModel):
@@ -171,6 +192,7 @@ class InviteOut(BaseModel):
     code: str
     expires_at: datetime
     member_id: uuid.UUID | None
+    link: str = ""
     share_text: str
 
 

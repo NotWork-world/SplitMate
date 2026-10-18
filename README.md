@@ -4,7 +4,7 @@
 
 SplitMate is an Android app (React Native) with a FastAPI server for splitting expenses among friends, flatmates, couples and travel groups. Its signature feature turns a restaurant bill into swipe cards: swipe right to say who had a dish, left to come back to it later. GST (CGST + SGST / IGST, inclusive or exclusive), discounts, coupons, service charges, tips and rounding are calculated exactly in integer paise, and every share reconciles to the total.
 
-The product spec is [prompt.md](prompt.md); architecture, money rules and milestones are in [PLAN.md](PLAN.md).
+Architecture, money rules and milestones are in [PLAN.md](PLAN.md).
 
 ## Repository layout
 

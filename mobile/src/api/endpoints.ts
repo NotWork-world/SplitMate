@@ -2,6 +2,7 @@ import {createApi, BaseQueryFn} from '@reduxjs/toolkit/query/react';
 import type {BillResult} from '../money/types';
 import {ApiError, request} from './client';
 import type {
+  PublicUser,
   ActivityItem,
   Expense,
   ExpensePayload,
@@ -55,7 +56,7 @@ export const splitApi = createApi({
   endpoints: b => ({
     health: b.query<Health, void>({query: () => '/health'}),
     me: b.query<User, void>({query: () => '/me', providesTags: ['Me']}),
-    updateMe: b.mutation<User, Partial<Pick<User, 'display_name' | 'upi_id' | 'default_currency' | 'avatar_hue'>> & {preferences?: Record<string, boolean>}>({
+    updateMe: b.mutation<User, Partial<Pick<User, 'display_name' | 'username' | 'upi_id' | 'default_currency' | 'avatar_hue'>> & {preferences?: Record<string, boolean>}>({
       query: body => ({url: '/me', method: 'PATCH', body}),
       invalidatesTags: ['Me', 'Groups', 'Summary'],
     }),
@@ -86,9 +87,12 @@ export const splitApi = createApi({
       query: ({id, body}) => ({url: `/groups/${id}`, method: 'PATCH', body}),
       invalidatesTags: ['Groups', 'Group', 'Summary'],
     }),
-    addMember: b.mutation<Member, {groupId: string; display_name: string}>({
-      query: ({groupId, display_name}) => ({url: `/groups/${groupId}/members`, method: 'POST', body: {display_name}}),
+    addMember: b.mutation<Member, {groupId: string; display_name?: string; username?: string}>({
+      query: ({groupId, ...body}) => ({url: `/groups/${groupId}/members`, method: 'POST', body}),
       invalidatesTags: ['Groups', 'Group', 'Activity'],
+    }),
+    userByUsername: b.query<PublicUser, string>({
+      query: u => `/users/by-username/${encodeURIComponent(u.trim().replace(/^@/, '').toLowerCase())}`,
     }),
     updateMember: b.mutation<Member, {groupId: string; memberId: string; body: {display_name?: string; role?: string}}>({
       query: ({groupId, memberId, body}) => ({url: `/groups/${groupId}/members/${memberId}`, method: 'PATCH', body}),
@@ -98,7 +102,7 @@ export const splitApi = createApi({
       query: ({groupId, memberId}) => ({url: `/groups/${groupId}/members/${memberId}`, method: 'DELETE'}),
       invalidatesTags: ['Groups', 'Group', 'Summary', 'Activity'],
     }),
-    createInvite: b.mutation<{code: string; expires_at: string; share_text: string}, {groupId: string; memberId?: string}>({
+    createInvite: b.mutation<{code: string; expires_at: string; link: string; share_text: string},{groupId: string; memberId?: string}>({
       query: ({groupId, memberId}) => ({url: `/groups/${groupId}/invites`, method: 'POST', body: {member_id: memberId ?? null}}),
     }),
     invitePreview: b.query<InvitePreview, string>({query: code => `/invites/${encodeURIComponent(code)}`}),
@@ -201,6 +205,7 @@ export const {
   useCreateGroupMutation,
   useUpdateGroupMutation,
   useAddMemberMutation,
+  useLazyUserByUsernameQuery,
   useUpdateMemberMutation,
   useRemoveMemberMutation,
   useCreateInviteMutation,

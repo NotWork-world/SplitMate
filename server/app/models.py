@@ -47,6 +47,8 @@ class User(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=new_id)
     email: Mapped[str | None] = mapped_column(String(320), unique=True)
     display_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    # Public handle so friends can add you to a group (lowercase, unique).
+    username: Mapped[str | None] = mapped_column(String(20), unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(255))
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
     avatar_hue: Mapped[int] = mapped_column(Integer, default=260, nullable=False)

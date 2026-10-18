@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
+import re
+from urllib.parse import quote
 
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
@@ -52,7 +55,36 @@ def create_app() -> FastAPI:
             },
         }
 
+    @app.get("/i/{code}", include_in_schema=False)
+    def invite_landing(code: str):
+        """Invite links shared on WhatsApp land here: open the app if it's installed, else the Play Store."""
+        if not re.fullmatch(r"[A-Za-z0-9]{6,32}", code):
+            return HTMLResponse("Invite not found", status_code=404)
+        store = f"https://play.google.com/store/apps/details?id={ANDROID_PACKAGE}"
+        intent = (
+            f"intent://join/{code}#Intent;scheme=splitmate;package={ANDROID_PACKAGE};"
+            f"S.browser_fallback_url={quote(store, safe='')};end"
+        )
+        return HTMLResponse(INVITE_PAGE.format(code=code, intent=intent, store=store, app_link=f"splitmate://join/{code}"))
+
     return app
+
+
+ANDROID_PACKAGE = "world.notwork.splitmate"
+
+INVITE_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Join on SplitMate</title>
+<style>body{{margin:0;font-family:system-ui,sans-serif;background:#F6F7EC;color:#1A2620;display:flex;
+min-height:100vh;align-items:center;justify-content:center}}main{{max-width:360px;padding:24px;text-align:center}}
+h1{{font-family:Georgia,serif;font-weight:400;font-size:34px;margin:0 0 8px}}p{{color:#55615A;line-height:1.5}}
+a.b{{display:block;padding:16px;border-radius:999px;text-decoration:none;font-weight:600;margin-top:12px}}
+.p{{background:#1F3B2D;color:#fff}}.s{{background:#D9E99A;color:#1F3B2D}}code{{font-size:20px;letter-spacing:2px}}</style>
+</head><body><main><h1>You're invited to <i>SplitMate</i></h1>
+<p>Split bills dish by dish, with GST worked out exactly.</p>
+<a class="b p" href="{intent}">Open in SplitMate</a>
+<a class="b s" href="{store}">Get the app</a>
+<p>After installing and signing up, tap this link again, or enter the code<br><code>{code}</code></p>
+</main><script>if(/Android/i.test(navigator.userAgent))location.href="{app_link}";</script></body></html>"""
 
 
 app = create_app()

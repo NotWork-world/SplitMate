@@ -25,7 +25,9 @@ from ..schemas import (
     MemberOut,
     MemberUpdate,
 )
+from ..core.config import get_settings
 from ..services import activity
+from ..services import auth as auth_svc
 from ..services import ledger as ledger_svc
 from .serialize import group_out, member_out
 
@@ -134,8 +136,25 @@ def add_member(group_id: uuid.UUID, body: MemberCreate, user: User = Depends(cur
     active = [m for m in g.members if m.status == "active"]
     if len(active) >= 100:
         raise invalid("group_full", "A group can have up to 100 members.")
-    m = GroupMember(group_id=g.id, display_name=body.display_name, contact_email=body.contact_email)
-    db.add(m)
+    if body.username:
+        # Someone already on SplitMate: they're in straight away and see the group in their list.
+        friend = db.scalar(
+            select(User).where(User.username == auth_svc.normalize_username(body.username), User.deleted_at.is_(None))
+        )
+        if friend is None:
+            raise ApiError(404, "user_not_found", "No one on SplitMate has that username.")
+        m = db.scalar(select(GroupMember).where(GroupMember.group_id == g.id, GroupMember.user_id == friend.id))
+        if m is not None and m.status == "active":
+            raise conflict("already_member", f"{m.display_name} is already in this group.")
+        if m is None:
+            m = GroupMember(group_id=g.id, user_id=friend.id, display_name=friend.display_name)
+            db.add(m)
+        else:  # they left before; bring their old spot back
+            m.status = "active"
+            m.display_name = friend.display_name
+    else:
+        m = GroupMember(group_id=g.id, display_name=body.display_name, contact_email=body.contact_email)
+        db.add(m)
     db.flush()
     activity.record(db, actor=user, type="member.added", entity_type="member", entity_id=m.id, group_id=g.id,
                     data={"name": m.display_name})
@@ -218,9 +237,13 @@ def create_invite(
                       expires_at=utcnow() + timedelta(days=14))
     db.add(inv)
     db.commit()
+    link = f"{get_settings().public_base_url.rstrip('/')}/i/{code}"
     return InviteOut(
-        code=code, expires_at=inv.expires_at, member_id=member_id,
-        share_text=f"Join \"{g.name}\" on SplitMate to split expenses with me. Invite code: {code}",
+        code=code, expires_at=inv.expires_at, member_id=member_id, link=link,
+        share_text=(
+            f"Join \"{g.name}\" on SplitMate so we can split expenses. Tap to join: {link}\n"
+            f"New to SplitMate? Install it, sign up, then open the link again (or enter code {code})."
+        ),
     )
 
 

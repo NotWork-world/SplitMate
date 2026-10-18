@@ -1,5 +1,5 @@
-import React from 'react';
-import {Pressable, StyleSheet, View} from 'react-native';
+import React, {useEffect} from 'react';
+import {Linking, Pressable, StyleSheet, View} from 'react-native';
 import {DarkTheme, DefaultTheme, NavigationContainer, type LinkingOptions} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createBottomTabNavigator, type BottomTabBarProps} from '@react-navigation/bottom-tabs';
@@ -102,13 +102,34 @@ function MainTabs() {
   );
 }
 
+// An invite link opened before signing in/up: kept until the app stack mounts, then opened.
+let pendingInvite: string | null = null;
+
 const linking: LinkingOptions<AppParams> = {
   prefixes: ['splitmate://'],
   config: {screens: {JoinGroup: 'join/:code', ExpenseDetail: 'expense/:expenseId', RepaymentDetail: 'repayment/:repaymentId'}},
+  getInitialURL: async () => {
+    const u = pendingInvite;
+    pendingInvite = null;
+    return u ?? Linking.getInitialURL();
+  },
 };
 
 export function RootNavigator() {
   const status = useAppSelector(s => s.auth.status);
+  useEffect(() => {
+    if (status === 'signedIn') {
+      return;
+    }
+    const keep = (url: string | null | undefined) => {
+      if (url && url.startsWith('splitmate://join/')) {
+        pendingInvite = url;
+      }
+    };
+    Linking.getInitialURL().then(keep);
+    const sub = Linking.addEventListener('url', e => keep(e.url));
+    return () => sub.remove();
+  }, [status]);
   const {colors, dark} = useTheme();
   const base = dark ? DarkTheme : DefaultTheme;
   const navTheme = {
@@ -121,7 +142,8 @@ export function RootNavigator() {
     return <View style={{flex: 1, backgroundColor: colors.bg}} />;
   }
   return (
-    <NavigationContainer theme={navTheme} linking={status === 'signedIn' ? linking : undefined}>
+    // Keyed by status so signing in remounts it and the pending invite link is read.
+    <NavigationContainer key={status} theme={navTheme} linking={status === 'signedIn' ? linking : undefined}>
       {status === 'signedIn' ? (
         <AppStack.Navigator screenOptions={screenOptions}>
           <AppStack.Screen name="Tabs" component={MainTabs} />

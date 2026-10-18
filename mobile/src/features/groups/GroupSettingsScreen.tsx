@@ -1,9 +1,8 @@
 import React, {useState} from 'react';
-import {Share, View} from 'react-native';
-import {Archive, LogOut, Pencil, Plus, Share2, Shield, UserMinus} from 'lucide-react-native';
+import {Share} from 'react-native';
+import {Archive, LogOut, Pencil, Share2, Shield, UserMinus, UserPlus} from 'lucide-react-native';
 import {
   errorMessage,
-  useAddMemberMutation,
   useCreateInviteMutation,
   useGroupQuery,
   useRemoveMemberMutation,
@@ -29,17 +28,17 @@ import {
 } from '../../design';
 import type {AppScreen} from '../../navigation/types';
 import {QueryView} from '../common/QueryView';
+import {AddPeopleSheet} from './AddPeopleSheet';
 
 export function GroupSettingsScreen({route, navigation}: AppScreen<'GroupSettings'>) {
   const {groupId} = route.params;
   const toast = useToast();
   const q = useGroupQuery(groupId);
-  const [addMember, addState] = useAddMemberMutation();
+  const [addOpen, setAddOpen] = useState(false);
   const [removeMember, removeState] = useRemoveMemberMutation();
   const [updateMember] = useUpdateMemberMutation();
   const [updateGroup, updateState] = useUpdateGroupMutation();
   const [createInvite, inviteState] = useCreateInviteMutation();
-  const [newName, setNewName] = useState('');
   const [rename, setRename] = useState<string | null>(null);
   const [selected, setSelected] = useState<Member | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<Member | null>(null);
@@ -48,7 +47,7 @@ export function GroupSettingsScreen({route, navigation}: AppScreen<'GroupSetting
   const share = async (memberId?: string) => {
     try {
       const inv = await createInvite({groupId, memberId}).unwrap();
-      await Share.share({message: `${inv.share_text}\n\nOpen SplitMate → Groups → Join with a code.`});
+      await Share.share({message: inv.share_text});
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -70,31 +69,14 @@ export function GroupSettingsScreen({route, navigation}: AppScreen<'GroupSetting
                     key={m.id}
                     left={<Avatar name={m.display_name} hue={m.avatar_hue} size={36} />}
                     title={`${m.display_name}${m.is_me ? ' (you)' : ''}`}
-                    subtitle={m.role !== 'member' ? (m.role === 'owner' ? 'Owner' : 'Admin') : m.is_registered ? 'On SplitMate' : 'Not on SplitMate yet · tap to invite'}
+                    subtitle={m.role !== 'member' ? (m.role === 'owner' ? 'Owner' : 'Admin') : m.is_registered ? (m.username ? `@${m.username} · On SplitMate` : 'On SplitMate') :'Not on SplitMate yet · tap to invite'}
                     onPress={m.is_me ? undefined : () => setSelected(m)}
                   />
                 ))}
               </Card>
-              <View style={{flexDirection: 'row', gap: space.sm, alignItems: 'flex-end', marginTop: space.md}}>
-                <TextField containerStyle={{flex: 1}} placeholder="Add someone by name" value={newName} onChangeText={setNewName} />
-                <Button
-                  label="Add"
-                  icon={Plus}
-                  variant="secondary"
-                  loading={addState.isLoading}
-                  disabled={!newName.trim()}
-                  onPress={async () => {
-                    try {
-                      await addMember({groupId, display_name: newName.trim()}).unwrap();
-                      setNewName('');
-                      toast('Added', 'positive');
-                    } catch (e) {
-                      setError(errorMessage(e));
-                    }
-                  }}
-                />
-              </View>
-              <Button label="Share an invite code" icon={Share2} variant="ghost" loading={inviteState.isLoading} onPress={() => share()} style={{marginTop: space.sm}} />
+              <Button label="Add people" icon={UserPlus} variant="food" onPress={() => setAddOpen(true)} style={{marginTop: space.md}} testID="group-add-people" />
+              <Button label="Share an invite link" icon={Share2} variant="ghost" loading={inviteState.isLoading} onPress={() => share()} style={{marginTop: space.xs}} />
+              <AddPeopleSheet visible={addOpen} onClose={() => setAddOpen(false)} groupId={groupId} groupName={g.name} />
 
               <SectionTitle title="Group" />
               <Card padded={false} style={{paddingHorizontal: space.sm}}>

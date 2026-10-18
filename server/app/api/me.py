@@ -24,7 +24,8 @@ from ..models import (
     utcnow,
 )
 from ..money.currency import SUPPORTED_CURRENCIES
-from ..schemas import DeleteAccountIn, PasswordChange, ProfileUpdate, UserOut
+from ..core.ratelimit import write_limit
+from ..schemas import DeleteAccountIn, PasswordChange, ProfileUpdate, PublicUserOut, UserOut
 from ..services import activity
 from ..services import auth as auth_svc
 from ..services import ledger as ledger_svc
@@ -46,12 +47,33 @@ def my_memberships(db: Session, user: User, *, include_personal: bool = True) ->
 
 
 @router.get("/me", response_model=UserOut)
-def get_me(user: User = Depends(current_user)):
+def get_me(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    if not user.username:  # accounts made before usernames existed
+        auth_svc.assign_username(db, user)
+        db.commit()
     return auth_svc.user_out(user)
+
+
+@router.get("/users/by-username/{username}", response_model=PublicUserOut, dependencies=[Depends(write_limit)])
+def find_by_username(username: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Exact-match lookup only (no search), so the user list can't be browsed."""
+    found = db.scalar(
+        select(User).where(User.username == auth_svc.normalize_username(username), User.deleted_at.is_(None))
+    )
+    if found is None:
+        raise ApiError(404, "user_not_found", "No one on SplitMate has that username.")
+    return PublicUserOut(username=found.username, display_name=found.display_name, avatar_hue=found.avatar_hue)
 
 
 @router.patch("/me", response_model=UserOut)
 def update_me(body: ProfileUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    if body.username is not None:
+        name = auth_svc.normalize_username(body.username)
+        if not auth_svc.USERNAME_RE.match(name):
+            raise invalid("invalid_username", "Use 3–20 letters, numbers, _ or . (start and end with a letter or number).")
+        if name != user.username and db.scalar(select(User.id).where(User.username == name)):
+            raise ApiError(409, "username_taken", "That username is taken. Try another.")
+        user.username = name
     if body.display_name is not None:
         user.display_name = body.display_name
         # Keep the name shown in groups in step with the profile.
@@ -310,6 +332,7 @@ def delete_account(body: DeleteAccountIn, user: User = Depends(current_user), db
     user.google_sub = None
     user.password_hash = None
     user.upi_id = None
+    user.username = None
     user.display_name = "Deleted user"
     user.preferences = {}
     user.deleted_at = utcnow()
