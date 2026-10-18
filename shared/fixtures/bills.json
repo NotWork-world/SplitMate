@@ -1,0 +1,291 @@
+{
+  "about": "Hand-calculated bill cases. Both server/tests/test_fixtures.py and mobile/src/money/__tests__/fixtures.test.ts must pass every case. Amounts are integer minor units; rates and percentages are basis points (5% = 500); quantities are thousandths (2 = 2000). Only keys present under 'expect' are checked.",
+  "cases": [
+    {
+      "name": "prompt example: paneer, biryani, drinks, Rs 50 off, 5% GST on post-discount base, two people",
+      "input": {
+        "currency": "INR",
+        "items": [
+          {"id": "i1", "name": "Paneer Butter Masala", "unit_price_minor": 30000, "tax_rate_bp": 500, "consumers": [{"member_id": "a"}, {"member_id": "b"}]},
+          {"id": "i2", "name": "Chicken Biryani", "unit_price_minor": 25000, "tax_rate_bp": 500, "consumers": [{"member_id": "a"}, {"member_id": "b"}]},
+          {"id": "i3", "name": "Drinks", "unit_price_minor": 10000, "tax_rate_bp": 500, "consumers": [{"member_id": "a"}, {"member_id": "b"}]}
+        ],
+        "discounts": [{"id": "d1", "label": "Discount", "kind": "fixed", "value": 5000}]
+      },
+      "expect": {
+        "item_gross": 65000, "pre_tax_discounts": 5000, "taxable_base": 60000, "tax_total": 3000, "total": 63000,
+        "people": {"a": 31500, "b": 31500},
+        "items": {"i1": 29077, "i2": 24231, "i3": 9692},
+        "discount_allocations": {"d1": {"i1": 2308, "i2": 1923, "i3": 769}},
+        "issues": []
+      }
+    },
+    {
+      "name": "rent split equally three ways, leftover paise go to the lowest ids on a tie",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "rent", "name": "Rent", "unit_price_minor": 1000001, "consumers": [{"member_id": "c"}, {"member_id": "a"}, {"member_id": "b"}]}]
+      },
+      "expect": {"total": 1000001, "people": {"a": 333334, "b": 333334, "c": 333333}, "issues": []}
+    },
+    {
+      "name": "percentages that total 99.99% block finalisation",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Fuel", "unit_price_minor": 200000, "split_mode": "percent", "consumers": [{"member_id": "a", "value": 5000}, {"member_id": "b", "value": 4999}]}]
+      },
+      "expect": {"total": 200000, "unallocated": 200000, "issues": ["percent_not_100"], "can_finalize": false}
+    },
+    {
+      "name": "percentages 60/40",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Fuel", "unit_price_minor": 200001, "split_mode": "percent", "consumers": [{"member_id": "a", "value": 6000}, {"member_id": "b", "value": 4000}]}]
+      },
+      "expect": {"total": 200001, "people": {"a": 120001, "b": 80000}, "issues": []}
+    },
+    {
+      "name": "exact amounts",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Groceries", "unit_price_minor": 100000, "split_mode": "exact", "consumers": [{"member_id": "a", "value": 60000}, {"member_id": "b", "value": 40000}]}]
+      },
+      "expect": {"total": 100000, "people": {"a": 60000, "b": 40000}, "issues": []}
+    },
+    {
+      "name": "exact amounts that don't add up block finalisation",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Groceries", "unit_price_minor": 100000, "split_mode": "exact", "consumers": [{"member_id": "a", "value": 60000}, {"member_id": "b", "value": 30000}]}]
+      },
+      "expect": {"issues": ["exact_mismatch"], "can_finalize": false, "unallocated": 100000}
+    },
+    {
+      "name": "shares 2:1 on a pizza",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "p", "name": "Large Pizza", "unit_price_minor": 90000, "split_mode": "shares", "consumers": [{"member_id": "a", "value": 2}, {"member_id": "b", "value": 1}]}]
+      },
+      "expect": {"total": 90000, "people": {"a": 60000, "b": 30000}, "issues": []}
+    },
+    {
+      "name": "tax-inclusive price is not taxed again",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Masala Chai", "unit_price_minor": 10500, "tax_rate_bp": 500, "tax_inclusive": true, "consumers": [{"member_id": "a"}]}]
+      },
+      "expect": {"total": 10500, "tax_added": 0, "tax_included": 500, "taxable_base": 10000, "people": {"a": 10500}, "issues": []}
+    },
+    {
+      "name": "inclusive CGST+SGST with an odd paisa of tax: CGST takes it",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Thali", "unit_price_minor": 10522, "tax_rate_bp": 500, "tax_inclusive": true, "tax_scheme": "cgst_sgst", "consumers": [{"member_id": "a"}]}]
+      },
+      "expect": {
+        "total": 10522, "tax_included": 501,
+        "tax_lines": [{"component": "CGST", "component_rate_bp": 250, "amount": 251, "source": "configured"}, {"component": "SGST", "component_rate_bp": 250, "amount": 250, "source": "configured"}],
+        "issues": []
+      }
+    },
+    {
+      "name": "exclusive CGST 2.5% + SGST 2.5% shown separately, no double count",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Dinner", "unit_price_minor": 60000, "tax_rate_bp": 500, "tax_scheme": "cgst_sgst", "consumers": [{"member_id": "a"}, {"member_id": "b"}]}]
+      },
+      "expect": {
+        "tax_total": 3000, "total": 63000, "people": {"a": 31500, "b": 31500},
+        "tax_lines": [{"component": "CGST", "component_rate_bp": 250, "amount": 1500, "taxable_base": 60000}, {"component": "SGST", "component_rate_bp": 250, "amount": 1500, "taxable_base": 60000}],
+        "issues": []
+      }
+    },
+    {
+      "name": "IGST 18%",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Headphones", "unit_price_minor": 10000, "tax_rate_bp": 1800, "tax_scheme": "igst", "consumers": [{"member_id": "a"}]}]
+      },
+      "expect": {"tax_total": 1800, "total": 11800, "tax_lines": [{"component": "IGST", "component_rate_bp": 1800, "amount": 1800}], "issues": []}
+    },
+    {
+      "name": "two tax rates on one bill",
+      "input": {
+        "currency": "INR",
+        "items": [
+          {"id": "f", "name": "Food", "unit_price_minor": 10000, "tax_rate_bp": 500, "consumers": [{"member_id": "a"}]},
+          {"id": "s", "name": "Soft drink", "unit_price_minor": 20000, "tax_rate_bp": 1800, "consumers": [{"member_id": "b"}]}
+        ]
+      },
+      "expect": {"tax_total": 4100, "total": 34100, "people": {"a": 10500, "b": 23600}, "issues": []}
+    },
+    {
+      "name": "service charge with GST, packaging split equally, tip proportional",
+      "input": {
+        "currency": "INR",
+        "items": [
+          {"id": "x", "name": "Butter Chicken", "unit_price_minor": 60000, "tax_rate_bp": 500, "consumers": [{"member_id": "a"}]},
+          {"id": "y", "name": "Dal Makhani", "unit_price_minor": 40000, "tax_rate_bp": 500, "consumers": [{"member_id": "b"}]}
+        ],
+        "charges": [
+          {"id": "c1", "label": "Service charge", "type": "service", "kind": "percent", "value": 1000, "tax_rate_bp": 500},
+          {"id": "c2", "label": "Packaging", "type": "packaging", "kind": "fixed", "value": 2000, "allocation": "equal"},
+          {"id": "c3", "label": "Tip", "type": "tip", "kind": "fixed", "value": 5000}
+        ]
+      },
+      "expect": {
+        "charges": 17000, "charges_tax": 500, "tax_added": 5000, "tax_total": 5500, "total": 122500,
+        "people": {"a": 73300, "b": 49200},
+        "charge_allocations": {"c1": {"a": 6300, "b": 4200}, "c2": {"a": 1000, "b": 1000}, "c3": {"a": 3000, "b": 2000}},
+        "issues": []
+      }
+    },
+    {
+      "name": "round to nearest rupee: down",
+      "input": {"currency": "INR", "items": [{"id": "x", "name": "Snacks", "unit_price_minor": 10049, "consumers": [{"member_id": "a"}]}], "rounding": {"mode": "nearest_unit"}},
+      "expect": {"rounding": -49, "total": 10000, "people": {"a": 10000}, "issues": []}
+    },
+    {
+      "name": "round to nearest rupee: half goes up",
+      "input": {"currency": "INR", "items": [{"id": "x", "name": "Snacks", "unit_price_minor": 10050, "consumers": [{"member_id": "a"}, {"member_id": "b"}]}], "rounding": {"mode": "nearest_unit"}},
+      "expect": {"rounding": 50, "total": 10100, "people": {"a": 5050, "b": 5050}, "issues": []}
+    },
+    {
+      "name": "receipt total mismatch blocks finalisation and reports the difference",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Dinner", "unit_price_minor": 60000, "tax_rate_bp": 500, "consumers": [{"member_id": "a"}]}],
+        "receipt_total_minor": 63100
+      },
+      "expect": {"total": 63000, "receipt_difference": -100, "issues": ["receipt_total_mismatch"], "can_finalize": false}
+    },
+    {
+      "name": "labelled adjustment resolves a receipt mismatch",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Dinner", "unit_price_minor": 60000, "tax_rate_bp": 500, "consumers": [{"member_id": "a"}]}],
+        "charges": [{"id": "adj", "label": "Receipt adjustment", "type": "adjustment", "kind": "fixed", "value": 100}],
+        "receipt_total_minor": 63100
+      },
+      "expect": {"total": 63100, "receipt_difference": 0, "issues": [], "can_finalize": true}
+    },
+    {
+      "name": "unassigned item stays unassigned and blocks finalisation",
+      "input": {
+        "currency": "INR",
+        "items": [
+          {"id": "x", "name": "Naan", "unit_price_minor": 6000, "consumers": [{"member_id": "a"}]},
+          {"id": "y", "name": "Gulab Jamun", "unit_price_minor": 12000, "consumers": []}
+        ]
+      },
+      "expect": {"total": 18000, "allocated_total": 6000, "unallocated": 12000, "people": {"a": 6000}, "issues": ["item_unassigned"], "can_finalize": false}
+    },
+    {
+      "name": "JPY has no minor unit",
+      "input": {"currency": "JPY", "items": [{"id": "x", "name": "Ramen", "unit_price_minor": 1001, "consumers": [{"member_id": "a"}, {"member_id": "b"}, {"member_id": "c"}]}], "rounding": {"mode": "nearest_unit"}},
+      "expect": {"total": 1001, "rounding": 0, "people": {"a": 334, "b": 334, "c": 333}, "issues": []}
+    },
+    {
+      "name": "KWD has three decimals",
+      "input": {"currency": "KWD", "items": [{"id": "x", "name": "Shawarma", "unit_price_minor": 12345, "consumers": [{"member_id": "a"}]}], "rounding": {"mode": "nearest_unit"}},
+      "expect": {"total": 12000, "rounding": -345, "issues": []}
+    },
+    {
+      "name": "quantity 2 with a 10% item discount",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Cold Coffee", "quantity_milli": 2000, "unit_price_minor": 15000, "discount": {"kind": "percent", "value": 1000}, "consumers": [{"member_id": "a"}, {"member_id": "b"}]}]
+      },
+      "expect": {"item_gross": 30000, "item_discounts": 3000, "items_net": 27000, "total": 27000, "people": {"a": 13500, "b": 13500}, "issues": []}
+    },
+    {
+      "name": "fractional quantity rounds the line once, half up",
+      "input": {"currency": "INR", "items": [{"id": "x", "name": "Paneer (kg)", "quantity_milli": 1500, "unit_price_minor": 33333, "consumers": [{"member_id": "a"}]}]},
+      "expect": {"item_gross": 50000, "total": 50000, "issues": []}
+    },
+    {
+      "name": "item discount larger than the item is refused",
+      "input": {"currency": "INR", "items": [{"id": "x", "name": "Lassi", "unit_price_minor": 5000, "discount": {"kind": "fixed", "value": 6000}, "consumers": [{"member_id": "a"}]}]},
+      "expect": {"total": 0, "issues": ["discount_exceeds_amount"], "can_finalize": false}
+    },
+    {
+      "name": "bill discount larger than the bill is refused",
+      "input": {"currency": "INR", "items": [{"id": "x", "name": "Lassi", "unit_price_minor": 5000, "consumers": [{"member_id": "a"}]}], "discounts": [{"id": "d", "label": "Coupon", "kind": "fixed", "value": 9000, "is_coupon": true}]},
+      "expect": {"total": 0, "issues": ["discount_exceeds_amount"], "can_finalize": false}
+    },
+    {
+      "name": "10% bill discount then a fixed coupon, both before tax, in entry order",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Biryani", "unit_price_minor": 100000, "tax_rate_bp": 500, "consumers": [{"member_id": "a"}]}],
+        "discounts": [
+          {"id": "d1", "label": "10% off", "kind": "percent", "value": 1000},
+          {"id": "d2", "label": "Coupon SAVE100", "kind": "fixed", "value": 10000, "is_coupon": true}
+        ]
+      },
+      "expect": {"pre_tax_discounts": 20000, "taxable_base": 80000, "tax_total": 4000, "total": 84000, "issues": []}
+    },
+    {
+      "name": "discount only on selected items",
+      "input": {
+        "currency": "INR",
+        "items": [
+          {"id": "x", "name": "Pizza", "unit_price_minor": 40000, "consumers": [{"member_id": "a"}]},
+          {"id": "y", "name": "Beer", "unit_price_minor": 30000, "consumers": [{"member_id": "b"}]}
+        ],
+        "discounts": [{"id": "d", "label": "Food 25% off", "kind": "percent", "value": 2500, "item_ids": ["x"]}]
+      },
+      "expect": {"total": 60000, "people": {"a": 30000, "b": 30000}, "discount_allocations": {"d": {"x": 10000}}, "issues": []}
+    },
+    {
+      "name": "post-tax coupon split equally",
+      "input": {
+        "currency": "INR",
+        "items": [
+          {"id": "x", "name": "Momos", "unit_price_minor": 5000, "consumers": [{"member_id": "a"}]},
+          {"id": "y", "name": "Noodles", "unit_price_minor": 8000, "consumers": [{"member_id": "b"}]}
+        ],
+        "discounts": [{"id": "d", "label": "App coupon", "kind": "fixed", "value": 1000, "stage": "post_tax", "allocation": "equal", "is_coupon": true}]
+      },
+      "expect": {"post_tax_discounts": 1000, "total": 12000, "people": {"a": 4500, "b": 7500}, "issues": []}
+    },
+    {
+      "name": "receipt-reported CGST/SGST replaces the computed estimate and is labelled",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Dinner", "unit_price_minor": 60000, "tax_rate_bp": 500, "tax_scheme": "cgst_sgst", "consumers": [{"member_id": "a"}]}],
+        "reported_taxes": [{"component": "CGST", "rate_bp": 250, "amount_minor": 1501}, {"component": "SGST", "rate_bp": 250, "amount_minor": 1500}]
+      },
+      "expect": {
+        "tax_total": 3001, "total": 63001,
+        "tax_lines": [
+          {"component": "CGST", "amount": 1501, "computed_amount": 1500, "source": "receipt"},
+          {"component": "SGST", "amount": 1500, "computed_amount": 1500, "source": "receipt"}
+        ],
+        "issues": []
+      }
+    },
+    {
+      "name": "receipt shows only CGST: asks for review instead of guessing",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Dinner", "unit_price_minor": 60000, "tax_rate_bp": 500, "tax_scheme": "cgst_sgst", "consumers": [{"member_id": "a"}]}],
+        "reported_taxes": [{"component": "CGST", "rate_bp": 250, "amount_minor": 1500}]
+      },
+      "expect": {"tax_total": 3000, "issues": ["reported_tax_incomplete"], "can_finalize": false}
+    },
+    {
+      "name": "no items",
+      "input": {"currency": "INR", "items": []},
+      "expect": {"total": 0, "issues": ["no_items"], "can_finalize": false}
+    },
+    {
+      "name": "free item with zero exact amounts is fine",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "x", "name": "Complimentary papad", "unit_price_minor": 2000, "discount": {"kind": "percent", "value": 10000}, "split_mode": "exact", "consumers": [{"member_id": "a", "value": 0}, {"member_id": "b", "value": 0}]}]
+      },
+      "expect": {"total": 0, "people": {"a": 0, "b": 0}, "issues": []}
+    }
+  ]
+}

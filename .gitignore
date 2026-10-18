@@ -1,0 +1,35 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets — never commit real values
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+!mobile/android/app/debug.keystore
+google-services.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.hypothesis/
+*.sqlite3
+*.db
+server/storage/
+
+# Node / React Native
+node_modules/
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/local.properties
+mobile/android/.kotlin/
+*.hprof
+mobile/.metro-health-check*
+coverage/
