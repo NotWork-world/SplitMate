@@ -1,6 +1,6 @@
 # Deploy the SplitMate server (Render + Neon, free tiers)
 
-The app talks to `https://splitmate-api.onrender.com` by default (`mobile/src/config.ts`). This guide puts the API there.
+The app talks to `https://splitmate-api-ya67.onrender.com` by default (`mobile/src/config.ts`). This guide puts the API there.
 
 ## 1. Database on Neon
 
