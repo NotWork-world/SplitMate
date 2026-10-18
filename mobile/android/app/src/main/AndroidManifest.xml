@@ -12,6 +12,19 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="upi" />
         </intent>
+        <!-- The pay sheet opens these apps directly on their pay screen. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tez" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="phonepe" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="paytmmp" />
+        </intent>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
@@ -26,7 +39,7 @@
       android:theme="@style/AppTheme"
       android:networkSecurityConfig="@xml/network_security_config"
       android:supportsRtl="true">
-      <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="ocr" />
+      <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="ocr,barcode" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

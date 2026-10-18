@@ -64,14 +64,14 @@ def enableProguardInReleaseBuilds = true
  * Version: mobile/package.json "version" is the single source of truth (Settings shows it).
  * Google Play needs a versionCode that grows with every upload: 1.2.3 -> 10203.
  */
-def appVersion = new groovy.json.JsonSlurper().parse(file("../../package.json")).version as String
+def appVersion = (file("../../package.json").text =~ /"version"\s*:\s*"([^"]+)"/)[0][1] as String
 def versionParts = appVersion =~ /^(\d+)\.(\d+)\.(\d+)$/
 if (!versionParts.matches()) {
-    throw new GradleException("mobile/package.json version must look like 1.2.3, got '${appVersion}'")
+    throw new IllegalStateException("mobile/package.json version must look like 1.2.3, got '${appVersion}'")
 }
 def (versionMajor, versionMinor, versionPatch) = (1..3).collect { versionParts.group(it) as int }
 if (versionMinor > 99 || versionPatch > 99) {
-    throw new GradleException("Minor and patch versions must stay below 100 to fit the versionCode scheme, got '${appVersion}'")
+    throw new IllegalStateException("Minor and patch versions must stay below 100 to fit the versionCode scheme, got '${appVersion}'")
 }
 def appVersionCode = versionMajor * 10000 + versionMinor * 100 + versionPatch
 
@@ -90,11 +90,11 @@ def uploadKey = [
 ]
 def hasUploadKey = uploadKey.values().every { it }
 if (hasUploadKey && !file(uploadKey.storeFile).isFile()) {
-    throw new GradleException("SPLITMATE_UPLOAD_STORE_FILE points to '${uploadKey.storeFile}', which doesn't exist")
+    throw new IllegalStateException("SPLITMATE_UPLOAD_STORE_FILE points to '${uploadKey.storeFile}', which doesn't exist")
 }
 def requestedTasks = gradle.startParameter.taskNames.collect { it.toLowerCase() }
 if (!hasUploadKey && requestedTasks.any { it.contains("bundlerelease") }) {
-    throw new GradleException("SplitMate: bundleRelease makes the app bundle for Google Play, which needs your upload key. " +
+    throw new IllegalStateException("SplitMate: bundleRelease makes the app bundle for Google Play, which needs your upload key. " +
         "Set SPLITMATE_UPLOAD_STORE_FILE, SPLITMATE_UPLOAD_STORE_PASSWORD, SPLITMATE_UPLOAD_KEY_ALIAS and " +
         "SPLITMATE_UPLOAD_KEY_PASSWORD (docs/play-store.md). For a test APK, use assembleRelease.")
 }

@@ -27,7 +27,8 @@ const baseQuery: BaseQueryFn<Args | string, unknown, QueryError> = async arg => 
   const a = typeof arg === 'string' ? {url: arg} : arg;
   try {
     const data = await request(a.method ?? 'GET', a.url, {body: a.body, idempotencyKey: a.idempotencyKey});
-    return {data};
+    // 204 No Content resolves to undefined, which RTK Query treats as "no result".
+    return {data: data ?? null};
   } catch (e) {
     if (e instanceof ApiError) {
       return {error: {status: e.status, code: e.code, message: e.message, details: e.details}};

@@ -1,6 +1,10 @@
 import React, {useEffect, useState} from 'react';
 import {Pressable, Share, View} from 'react-native';
-import {Bell, Download, FileText, KeyRound, LogOut, Server, ShieldCheck, Trash2, Wallet} from 'lucide-react-native';
+import {Bell, Download, FileText, KeyRound, LogOut, QrCode, Server, ShieldCheck, Trash2, Wallet} from 'lucide-react-native';
+import {launchImageLibrary} from 'react-native-image-picker';
+import BarcodeScanning from '@react-native-ml-kit/barcode-scanning';
+import QRCode from 'react-native-qrcode-svg';
+import {parseUpiQr, upiPayUrl} from '../../payments/upi';
 import {
   errorMessage,
   useChangePasswordMutation,
@@ -172,6 +176,45 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
         error={upiErr}
         hint="Shown to people in your groups so they can pay you from their UPI app."
       />
+      <Button
+        label="Fill from my UPI QR code"
+        icon={QrCode}
+        variant="secondary"
+        size="sm"
+        style={{marginTop: space.sm, alignSelf: 'flex-start'}}
+        onPress={async () => {
+          setError(null);
+          const res = await launchImageLibrary({mediaType: 'photo', selectionLimit: 1});
+          const uri = res.assets?.[0]?.uri;
+          if (!uri) {
+            return;
+          }
+          try {
+            const codes = await BarcodeScanning.scan(uri);
+            const found = codes.map(c => parseUpiQr(c.value)).find(Boolean);
+            if (found) {
+              setUpi(found.upiId);
+              toast('UPI ID read from your QR', 'positive');
+            } else {
+              setError("No UPI QR found in that picture. Try a screenshot of the QR from your UPI app's \"Receive money\" page.");
+            }
+          } catch {
+            setError("That picture couldn't be read.");
+          }
+        }}
+        testID="profile-upi-qr"
+      />
+      {upi && !upiErr ? (
+        <Card style={{alignItems: 'center', marginTop: space.md}}>
+          <Text variant="smallStrong">Your payment QR</Text>
+          <View style={{padding: space.md, backgroundColor: '#FFFFFF', borderRadius: 12, marginTop: space.sm}}>
+            <QRCode value={upiPayUrl('upi://pay', {upiId: upi.trim(), name: name.trim() || 'SplitMate'})} size={168} color="#1F3B2D" />
+          </View>
+          <Text variant="caption" tone="faint" align="center" style={{marginTop: space.sm}}>
+            Friends can scan this with any UPI app to pay you.
+          </Text>
+        </Card>
+      ) : null}
       <SectionTitle title="Default currency for new groups" />
       <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: space.sm}}>
         {SUPPORTED_CURRENCIES.slice(0, 10).map(c => (

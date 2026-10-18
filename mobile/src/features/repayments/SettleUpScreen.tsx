@@ -1,10 +1,11 @@
 import React, {useMemo, useState} from 'react';
-import {Linking, View} from 'react-native';
+import {View} from 'react-native';
 import {newId} from '../../api/client';
 import {errorMessage, useCreateRepaymentMutation, useGroupQuery} from '../../api/endpoints';
 import {Avatar, Banner, Button, Card, Chip, Footer, Header, MoneyField, Screen, SectionTitle, Text, TextField, space, useToast} from '../../design';
 import {formatMoney, toInputText} from '../../money/currency';
 import type {AppScreen} from '../../navigation/types';
+import {UpiPaySheet} from '../../payments/UpiPaySheet';
 
 const METHODS = [
   {value: 'upi', label: 'UPI'},
@@ -23,6 +24,8 @@ export function SettleUpScreen({route, navigation}: AppScreen<'SettleUp'>) {
   const [note, setNote] = useState('');
   const [reference, setReference] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [upiSheet, setUpiSheet] = useState(false);
+  const [launched, setLaunched] = useState(false);
   const idem = useMemo(() => newId('rep_'), []);
   const other = group.data?.members.find(m => m.id === memberId);
   const name = other?.display_name ?? 'them';
@@ -94,17 +97,31 @@ export function SettleUpScreen({route, navigation}: AppScreen<'SettleUp'>) {
       </View>
       {mode === 'record' && method === 'upi' && currency === 'INR' ? (
         other?.upi_id ? (
-          <Button
-            label={`Pay ${name} in my UPI app`}
-            variant="secondary"
-            disabled={!amount || !!amountErr}
-            style={{marginTop: space.md}}
-            onPress={() =>
-              Linking.openURL(
-                `upi://pay?pa=${encodeURIComponent(other.upi_id ?? '')}&pn=${encodeURIComponent(name)}&am=${toInputText(amount ?? 0, currency)}&cu=INR&tn=${encodeURIComponent(`SplitMate ${group.data?.name ?? ''}`)}`,
-              ).catch(() => setError('No UPI app was found on this phone.'))
-            }
-          />
+          <>
+            <Button
+              label={`Pay ${name} with a UPI app`}
+              variant="food"
+              disabled={!amount || !!amountErr}
+              style={{marginTop: space.md}}
+              onPress={() => setUpiSheet(true)}
+              testID="settle-upi"
+            />
+            {launched ? (
+              <View style={{marginTop: space.sm}}>
+                <Banner tone="info" title="Paid in your UPI app?" body={`Tap "I paid" below. ${name} then confirms they received it.`} />
+              </View>
+            ) : null}
+            <UpiPaySheet
+              visible={upiSheet}
+              onClose={() => setUpiSheet(false)}
+              upiId={other.upi_id}
+              name={name}
+              note={`SplitMate ${group.data?.name ?? ''}`.trim()}
+              amount={toInputText(amount ?? 0, currency)}
+              amountLabel={formatMoney(amount ?? 0, currency)}
+              onLaunched={() => setLaunched(true)}
+            />
+          </>
         ) : (
           <Text variant="small" tone="faint" style={{marginTop: space.sm}}>
             {name} hasn't added a UPI ID. Pay them your usual way, then record it here.

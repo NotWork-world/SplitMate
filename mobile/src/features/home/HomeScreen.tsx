@@ -1,27 +1,13 @@
 import React from 'react';
-import {Pressable, StyleSheet, View} from 'react-native';
+import {Pressable, StyleSheet, useWindowDimensions, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import Svg, {Circle, Line, Path} from 'react-native-svg';
-import {ArrowUpRight, Bell, ScanLine, Utensils, Wallet} from 'lucide-react-native';
+import {ArrowUpRight, Bell, ScanLine, Users, Utensils, Wallet} from 'lucide-react-native';
 import {useSpendingQuery, useSummaryQuery} from '../../api/endpoints';
-import {
-  Accent,
-  Button,
-  Card,
-  EmptyState,
-  IconButton,
-  LogoMark,
-  Screen,
-  SectionTitle,
-  Text,
-  radius,
-  space,
-  useTheme,
-} from '../../design';
+import {Accent, Button, IconButton, LogoMark, Screen, Text, radius, space, useTheme} from '../../design';
 import {formatMoney} from '../../money/currency';
 import {useAppSelector} from '../../store';
 import {QueryView} from '../common/QueryView';
-import {ExpenseRow, RepaymentRow} from '../common/rows';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -32,6 +18,7 @@ export function HomeScreen() {
   const q = useSummaryQuery(undefined, {refetchOnFocus: true, refetchOnMountOrArgChange: 30});
   const spending = useSpendingQuery(2, {refetchOnFocus: true});
   const currency = user?.default_currency ?? 'INR';
+  const compact = useWindowDimensions().height < 760;
 
   return (
     <Screen
@@ -39,7 +26,10 @@ export function HomeScreen() {
       onRefresh={() => {
         q.refetch();
         spending.refetch();
-      }}>
+      }}
+      // The dashboard is a single page: content is sized to fit, so it never scrolls or jumps.
+      contentStyle={{flexGrow: 1, paddingBottom: space.md}}
+      scrollProps={{overScrollMode: 'never', showsVerticalScrollIndicator: false}}>
       <View style={styles.top}>
         <View style={[styles.logoPill, {borderColor: colors.text}]}>
           <LogoMark size={22} />
@@ -68,19 +58,19 @@ export function HomeScreen() {
           const change = thisMonth && lastMonth && lastMonth.amount_minor ? Math.round(((thisMonth.amount_minor - lastMonth.amount_minor) / lastMonth.amount_minor) * 100) : null;
           return (
             <>
-              <Text variant="hero" align="center" style={{alignSelf: 'stretch', marginTop: space.md}}>
+              <Text variant="hero" align="center" style={{alignSelf: 'stretch', marginTop: compact ? 0 : space.sm}}>
                 Your <Accent>balance</Accent>
               </Text>
               <Pressable accessibilityRole="button" accessibilityLabel={`Net balance ${formatMoney(net, currency)}. Open balances.`} onPress={() => nav.navigate('Balances')}>
-                <BalanceGauge owed={owed} owe={owe} currency={currency} />
+                <BalanceGauge owed={owed} owe={owe} currency={currency} width={compact ? 250 : 290} />
               </Pressable>
 
-              <View style={styles.actions}>
+              <View style={[styles.actions, {marginTop: compact ? space.sm : space.lg}]}>
                 <Button label="Split a bill" icon={Utensils} variant="food" style={{flex: 1}} onPress={() => nav.navigate('StartExpense', {mode: 'itemized'})} />
                 <Button label="Add expense" icon={Wallet} style={{flex: 1}} onPress={() => nav.navigate('StartExpense', {mode: 'simple'})} />
               </View>
 
-              <Text variant="title" style={{marginTop: space.xxl, marginBottom: space.md}}>
+              <Text variant="title" style={{marginTop: compact ? space.md : space.xl, marginBottom: space.sm}}>
                 Your <Accent>information</Accent>
               </Text>
               <View style={styles.grid}>
@@ -102,66 +92,22 @@ export function HomeScreen() {
                 />
               </View>
 
+              {/* One wide card: start here if there are no groups, otherwise scan a bill. */}
               <Pressable
                 accessibilityRole="button"
-                onPress={() => nav.navigate('StartExpense', {mode: 'itemized'})}
+                onPress={() => (s.group_count === 0 ? nav.navigate('CreateGroup') : nav.navigate('StartExpense', {mode: 'itemized'}))}
                 style={[styles.scan, {backgroundColor: colors.highlight}]}>
-                <ScanLine size={22} color={colors.highlightText} />
+                {s.group_count === 0 ? <Users size={22} color={colors.highlightText} /> : <ScanLine size={22} color={colors.highlightText} />}
                 <View style={{flex: 1}}>
                   <Text variant="bodyStrong" color={colors.highlightText}>
-                    Scan a receipt
+                    {s.group_count === 0 ? 'Start with a group' : 'Scan a receipt'}
                   </Text>
-                  <Text variant="small" color={colors.highlightText}>
-                    Read the bill on your phone, check every line, then split it.
+                  <Text variant="small" color={colors.highlightText} numberOfLines={1}>
+                    {s.group_count === 0 ? 'Your flat, a trip or tonight’s dinner' : 'Check every line, then split it'}
                   </Text>
                 </View>
                 <ArrowUpRight size={20} color={colors.highlightText} />
               </Pressable>
-
-              {s.needs_my_action.length ? (
-                <>
-                  <SectionTitle title="Waiting for you" />
-                  <Card padded={false} style={{paddingHorizontal: space.sm}}>
-                    {s.needs_my_action.map(r => (
-                      <RepaymentRow key={r.id} r={r} onPress={() => nav.navigate('RepaymentDetail', {repaymentId: r.id})} />
-                    ))}
-                  </Card>
-                </>
-              ) : null}
-
-              {s.drafts.length ? (
-                <>
-                  <SectionTitle title="Drafts" />
-                  <Card padded={false} style={{paddingHorizontal: space.sm}}>
-                    {s.drafts.map(e => (
-                      <ExpenseRow key={e.id} e={e} showGroup onPress={() => nav.navigate('ExpenseDetail', {expenseId: e.id})} />
-                    ))}
-                  </Card>
-                </>
-              ) : null}
-
-              <SectionTitle title="Recent" />
-              {s.recent_expenses.length ? (
-                <Card padded={false} style={{paddingHorizontal: space.sm}}>
-                  {s.recent_expenses.map(e => (
-                    <ExpenseRow key={e.id} e={e} showGroup onPress={() => nav.navigate('ExpenseDetail', {expenseId: e.id})} />
-                  ))}
-                </Card>
-              ) : s.group_count === 0 ? (
-                <EmptyState
-                  emoji="🍽️"
-                  title="Start with a group"
-                  body="Make a group for your flat, a trip or tonight's dinner. Friends don't need the app to be added."
-                  action={{label: 'Create a group', onPress: () => nav.navigate('CreateGroup')}}
-                />
-              ) : (
-                <Card>
-                  <Text variant="bodyStrong">No expenses yet</Text>
-                  <Text variant="small" tone="muted" style={{marginTop: 4}}>
-                    Add the first one and SplitMate will work out who owes whom.
-                  </Text>
-                </Card>
-              )}
             </>
           );
         }}
@@ -174,14 +120,14 @@ export function HomeScreen() {
  * Semicircle gauge: how the money you're owed compares with what you owe.
  * Full right = everything is coming back to you; full left = you owe it all.
  */
-function BalanceGauge({owed, owe, currency}: {owed: number; owe: number; currency: string}) {
+function BalanceGauge({owed, owe, currency, width: W}: {owed: number; owe: number; currency: string; width: number}) {
   const {colors} = useTheme();
   const net = owed - owe;
   const share = owed + owe === 0 ? 0.5 : owed / (owed + owe);
-  const W = 300;
+  const k = W / 300; // drawn at 300 wide, scaled to fit the screen
   const cx = W / 2;
-  const cy = 160;
-  const R = 128;
+  const cy = 160 * k;
+  const R = 128 * k;
   const point = (t: number, r: number) => {
     const a = Math.PI * (1 - t); // t=0 left, t=1 right
     return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
@@ -190,25 +136,25 @@ function BalanceGauge({owed, owe, currency}: {owed: number; owe: number; currenc
   const [sx, sy] = point(0, R);
   const large = share > 0.5 ? 1 : 0;
   return (
-    <View style={{alignItems: 'center', marginTop: space.sm}}>
-      <Svg width={W} height={178}>
+    <View style={{alignItems: 'center', marginTop: space.xs}}>
+      <Svg width={W} height={178 * k}>
         <Path d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}`} stroke={colors.border} strokeWidth={4} fill="none" />
         {Array.from({length: 13}).map((_, i) => {
-          const [x1, y1] = point(i / 12, R + 10);
-          const [x2, y2] = point(i / 12, R + (i % 3 === 0 ? 22 : 16));
+          const [x1, y1] = point(i / 12, R + 10 * k);
+          const [x2, y2] = point(i / 12, R + (i % 3 === 0 ? 22 : 16) * k);
           return <Line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={colors.textFaint} strokeWidth={1.5} />;
         })}
         {share > 0.001 ? (
           <Path d={`M ${sx} ${sy} A ${R} ${R} 0 ${large} 1 ${ex} ${ey}`} stroke="#C3D96A" strokeWidth={8} strokeLinecap="round" fill="none" />
         ) : null}
         <Circle cx={ex} cy={ey} r={9} fill={colors.bg} stroke="#C3D96A" strokeWidth={4} />
-        <Circle cx={cx} cy={cy - 6} r={92} fill={colors.surface} />
+        <Circle cx={cx} cy={cy - 6 * k} r={92 * k} fill={colors.surface} />
       </Svg>
-      <View style={styles.gaugeCenter} pointerEvents="none">
+      <View style={[styles.gaugeCenter, {top: 70 * k}]} pointerEvents="none">
         <Text variant="small" tone="muted">
           Net balance
         </Text>
-        <Text variant="amountHero" numberOfLines={1} adjustsFontSizeToFit style={{maxWidth: 170}}>
+        <Text variant="amountHero" numberOfLines={1} adjustsFontSizeToFit style={{maxWidth: 160 * k}}>
           {formatMoney(Math.abs(net), currency)}
         </Text>
         <View style={[styles.chip, {backgroundColor: net >= 0 ? colors.positiveSoft : colors.negativeSoft}]}>
@@ -217,7 +163,7 @@ function BalanceGauge({owed, owe, currency}: {owed: number; owe: number; currenc
           </Text>
         </View>
       </View>
-      <View style={styles.gaugeLabels}>
+      <View style={[styles.gaugeLabels, {width: W}]}>
         <Text variant="caption" tone="faint">
           You owe
         </Text>
@@ -257,7 +203,7 @@ function Tile({
         </Text>
         <ArrowUpRight size={16} color={colors.textMuted} />
       </View>
-      <View style={{flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginTop: space.lg, flexWrap: 'wrap'}}>
+      <View style={{flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginTop: space.sm, flexWrap: 'wrap'}}>
         <Text variant="title" numberOfLines={1} adjustsFontSizeToFit style={{flexShrink: 1}}>
           {value}
         </Text>
@@ -277,11 +223,11 @@ const styles = StyleSheet.create({
   top: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.sm},
   logoPill: {flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.2, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6},
   badge: {position: 'absolute', top: -2, right: -2, minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4},
-  gaugeCenter: {position: 'absolute', top: 70, alignItems: 'center'},
-  gaugeLabels: {flexDirection: 'row', justifyContent: 'space-between', width: 300, marginTop: -6},
+  gaugeCenter: {position: 'absolute', alignItems: 'center'},
+  gaugeLabels: {flexDirection: 'row', justifyContent: 'space-between', marginTop: -6},
   chip: {paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill, marginTop: 4},
-  actions: {flexDirection: 'row', gap: space.sm, marginTop: space.xl},
+  actions: {flexDirection: 'row', gap: space.sm},
   grid: {flexDirection: 'row', flexWrap: 'wrap', gap: space.sm},
-  tile: {width: '48.6%', borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, padding: space.lg, minHeight: 124},
-  scan: {flexDirection: 'row', alignItems: 'center', gap: space.md, borderRadius: radius.lg, padding: space.lg, marginTop: space.md},
+  tile: {width: '48.6%', borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: space.lg, paddingVertical: space.md, minHeight: 92},
+  scan: {flexDirection: 'row', alignItems: 'center', gap: space.md, borderRadius: radius.lg, paddingHorizontal: space.lg, paddingVertical: space.md, marginTop: space.sm},
 });

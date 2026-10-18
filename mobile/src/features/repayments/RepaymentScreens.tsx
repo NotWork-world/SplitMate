@@ -4,7 +4,9 @@ import {newId} from '../../api/client';
 import {errorMessage, useRepaymentActionMutation, useRepaymentQuery, useRepaymentsQuery} from '../../api/endpoints';
 import type {RepaymentActionName} from '../../api/types';
 import {Avatar, Banner, Button, Card, EmptyState, Header, Money, Screen, SectionTitle, Sheet, Text, TextField, space, useTheme, useToast} from '../../design';
+import {formatMoney, toInputText} from '../../money/currency';
 import type {AppScreen} from '../../navigation/types';
+import {UpiPaySheet} from '../../payments/UpiPaySheet';
 import {QueryView} from '../common/QueryView';
 import {RepaymentRow, STATUS_LABEL, timeAgo} from '../common/rows';
 
@@ -26,6 +28,7 @@ export function RepaymentDetailScreen({route}: AppScreen<'RepaymentDetail'>) {
   const [pending, setPending] = useState<RepaymentActionName | null>(null);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [upiSheet, setUpiSheet] = useState(false);
   // One key per opened action sheet, so a retried tap can't apply the action twice.
   const idem = useMemo(() => newId('act_'), [pending]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -76,6 +79,21 @@ export function RepaymentDetailScreen({route}: AppScreen<'RepaymentDetail'>) {
               ) : null}
 
               <View style={{gap: space.sm, marginTop: space.lg}}>
+                {r.i_am === 'debtor' && r.allowed_actions.includes('mark_sent') && r.currency === 'INR' && r.creditor.upi_id ? (
+                  <>
+                    <Button label={`Pay ${r.creditor.display_name} with a UPI app`} variant="food" onPress={() => setUpiSheet(true)} testID="rep-upi" />
+                    <UpiPaySheet
+                      visible={upiSheet}
+                      onClose={() => setUpiSheet(false)}
+                      upiId={r.creditor.upi_id}
+                      name={r.creditor.display_name}
+                      note={`SplitMate ${r.group_name}`}
+                      amount={toInputText(r.amount_minor, r.currency)}
+                      amountLabel={formatMoney(r.amount_minor, r.currency)}
+                      onLaunched={() => setPending('mark_sent')}
+                    />
+                  </>
+                ) : null}
                 {r.allowed_actions.map(a => (
                   <Button key={a} label={ACTION_COPY[a].label} variant={ACTION_COPY[a].variant} onPress={() => setPending(a)} testID={`rep-${a}`} />
                 ))}
