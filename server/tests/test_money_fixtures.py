@@ -38,3 +38,10 @@ def test_fixture(case):
     # Conservation holds for every case, valid or not.
     assert d["allocated_total"] + d["unallocated"] == d["total"]
     assert sum(p["total"] for p in d["people"]) == d["allocated_total"]
+
+
+def test_parity_fixture_is_current():
+    """shared/fixtures/parity.json must match the engine (run scripts/gen_parity.py after changes)."""
+    path = Path(__file__).resolve().parents[2] / "shared" / "fixtures" / "parity.json"
+    for case in json.loads(path.read_text(encoding="utf-8"))["cases"]:
+        assert compute_bill(BillInput.from_dict(case["input"])).to_dict() == case["output"]

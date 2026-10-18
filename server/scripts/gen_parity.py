@@ -1,0 +1,99 @@
+"""Generate shared/fixtures/parity.json: random bills with the Python engine's full output.
+
+The mobile Jest suite asserts the TypeScript engine produces identical results.
+Run after any engine change:  python scripts/gen_parity.py
+"""
+
+import json
+import random
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.money import BillInput, compute_bill  # noqa: E402
+
+MEMBERS = ["m1", "m2", "m3", "m4", "m5", "m6"]
+
+
+def random_bill(rng: random.Random) -> dict:
+    items = []
+    for n in range(rng.randint(1, 7)):
+        consumers = rng.sample(MEMBERS, rng.randint(0 if rng.random() < 0.05 else 1, 4))
+        mode = rng.choice(["equal", "equal", "shares", "percent", "exact"])
+        qty = rng.choice([1000, 1000, 2000, 1500, 333, 4000])
+        price = rng.choice([0, 1, 99, 4999, 12345, 30000, 99999, rng.randint(0, 500000)])
+        disc = None
+        if rng.random() < 0.3:
+            disc = rng.choice([{"kind": "percent", "value": rng.randint(0, 10000)}, {"kind": "fixed", "value": rng.randint(0, 20000)}])
+        gross = (2 * qty * price + 1000) // 2000
+        if mode == "shares":
+            cons = [{"member_id": m, "value": rng.randint(1, 4)} for m in consumers]
+        elif mode == "percent":
+            cuts = sorted(rng.sample(range(1, 10000), max(len(consumers) - 1, 0))) if consumers else []
+            bounds = [0, *cuts, 10000]
+            cons = [{"member_id": m, "value": bounds[i + 1] - bounds[i]} for i, m in enumerate(consumers)]
+            if rng.random() < 0.1 and cons:
+                cons[0]["value"] += 1  # invalid on purpose
+        elif mode == "exact":
+            net = gross
+            if disc:
+                net = gross - min(disc["value"] if disc["kind"] == "fixed" else (gross * disc["value"] * 2 + 10000) // 20000, gross)
+            cons, left = [], max(net, 0)
+            for i, m in enumerate(consumers):
+                v = left if i == len(consumers) - 1 else rng.randint(0, left)
+                cons.append({"member_id": m, "value": v})
+                left -= v
+        else:
+            cons = [{"member_id": m} for m in consumers]
+        items.append({
+            "id": f"i{n}", "name": f"Item {n}", "quantity_milli": qty, "unit_price_minor": price,
+            "discount": disc, "tax_rate_bp": rng.choice([0, 0, 500, 1200, 1800, 2800, 250]),
+            "tax_inclusive": rng.random() < 0.3, "tax_scheme": rng.choice(["gst", "cgst_sgst", "igst"]),
+            "split_mode": mode, "consumers": cons,
+        })
+    discounts = []
+    if rng.random() < 0.5:
+        discounts.append({"id": "d1", "label": "Bill", "kind": rng.choice(["fixed", "percent"]), "value": rng.randint(0, 5000)})
+    if rng.random() < 0.3:
+        discounts.append({"id": "d2", "label": "Food only", "kind": "percent", "value": rng.randint(0, 3000),
+                          "item_ids": [items[0]["id"]]})
+    if rng.random() < 0.3:
+        discounts.append({"id": "d3", "label": "Coupon", "kind": rng.choice(["fixed", "percent"]), "value": rng.randint(0, 3000),
+                          "stage": "post_tax", "allocation": rng.choice(["equal", "proportional"]), "is_coupon": True})
+    charges = []
+    if rng.random() < 0.5:
+        charges.append({"id": "c1", "label": "Service", "type": "service", "kind": "percent", "value": rng.choice([500, 1000]),
+                        "tax_rate_bp": rng.choice([0, 500, 1800]), "tax_scheme": rng.choice(["gst", "cgst_sgst"])})
+    if rng.random() < 0.4:
+        charges.append({"id": "c2", "label": "Delivery", "type": "delivery", "kind": "fixed", "value": rng.randint(0, 9000),
+                        "allocation": rng.choice(["equal", "proportional"])})
+    if rng.random() < 0.15:
+        charges.append({"id": "c3", "label": "Adj", "type": "adjustment", "kind": "fixed", "value": rng.randint(-500, 500)})
+    reported = []
+    if rng.random() < 0.15:
+        reported = [{"component": "CGST", "rate_bp": 250, "amount_minor": rng.randint(0, 3000)},
+                    {"component": "SGST", "rate_bp": 250, "amount_minor": rng.randint(0, 3000)}]
+    rounding = rng.choice([{"mode": "none"}, {"mode": "nearest_unit"}, {"mode": "explicit", "amount_minor": rng.randint(-60, 60)}])
+    bill = {
+        "currency": rng.choice(["INR", "INR", "USD", "JPY", "KWD"]), "items": items, "discounts": discounts,
+        "charges": charges, "reported_taxes": reported, "rounding": rounding,
+    }
+    if rng.random() < 0.2:
+        bill["receipt_total_minor"] = rng.randint(0, 200000)
+    return bill
+
+
+def main() -> None:
+    rng = random.Random(20261018)
+    cases = []
+    for _ in range(300):
+        bill = random_bill(rng)
+        cases.append({"input": bill, "output": compute_bill(BillInput.from_dict(bill)).to_dict()})
+    out = Path(__file__).resolve().parents[2] / "shared" / "fixtures" / "parity.json"
+    out.write_text(json.dumps({"about": "Generated by server/scripts/gen_parity.py. Do not edit.", "cases": cases}, ensure_ascii=False), encoding="utf-8")
+    print(f"wrote {len(cases)} cases to {out}")
+
+
+if __name__ == "__main__":
+    main()

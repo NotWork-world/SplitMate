@@ -1,0 +1,1 @@
+First release: groups, dish-by-dish bill splitting with swipe cards, exact GST/CGST/SGST, discounts, service charges and rounding, balances, settle-up suggestions, repayments with confirmation, and on-device receipt scanning.

@@ -46,6 +46,7 @@ def create_expense(
     group_id: uuid.UUID,
     body: ExpenseIn,
     finalize: bool = False,
+    client_total_minor: int | None = None,
     idempotency_key: str | None = Header(default=None),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -55,7 +56,7 @@ def create_expense(
     def work():
         e = svc.create_draft(db, user, group_id, body)
         if finalize:
-            e = svc.finalize(db, user, e.id, e.version, None)
+            e = svc.finalize(db, user, e.id, e.version, client_total_minor)
         e, me = svc.load(db, e.id, user)
         return expense_out(db, e, me)
 

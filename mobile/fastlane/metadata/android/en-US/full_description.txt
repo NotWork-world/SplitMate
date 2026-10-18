@@ -1,0 +1,36 @@
+Eat together. Split only what you shared. Know exactly who owes whom.
+
+SplitMate is a bill-splitting app for friends, flatmates, couples and travel groups. Its signature feature turns a restaurant bill into a stack of cards: swipe right to say who had each dish, left to come back to it later. Nothing is ever assigned to anyone automatically.
+
+EXACT TO THE PAISA
+• GST with CGST + SGST or IGST, tax-inclusive and tax-exclusive prices, never taxed twice
+• Item discounts, bill discounts, coupons, service charge, packaging, delivery and tips
+• Rounding and receipt totals: if the bill doesn't add up to the receipt, SplitMate tells you before anything is saved
+• Every share adds up exactly to the total, and every amount is explained line by line
+
+MORE THAN RESTAURANTS
+• Rent, groceries, fuel, tickets, utilities and travel
+• Split equally, by exact amounts, by percentage or by shares
+• Several people can pay one bill; paying and eating are tracked separately
+• Trips and home groups, plus a private personal space
+
+WHO OWES WHOM, AND WHY
+• Balances worked out only from finalised expenses and confirmed repayments
+• Suggested payments that settle a group in as few transfers as possible
+• Tap anyone to see every line behind your balance with them
+
+REPAYMENTS YOU CAN TRUST
+• Request money, record a payment, and settle partly or in full
+• A payment counts only when the person who received it confirms it
+• Disputes and rejections never change balances
+• Open your own UPI app to pay a friend who shared their UPI ID
+
+RECEIPT SCANNING (OPTIONAL)
+• The receipt's text is read on your phone
+• Review every line before it's added; unclear lines are highlighted
+• Typing items by hand always works
+
+PRIVATE BY DESIGN
+• No ads and no tracking
+• Friends don't need the app to be in your group
+• Export your data or delete your account at any time

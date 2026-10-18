@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
-from .api import auth, expenses, groups, me, repayments
+from .api import auth, expenses, groups, me, receipts, repayments
 from .core import errors
 from .core.config import get_settings
 from .integrations.google import get_verifier, verify_with_google
@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    for module in (auth, me, groups, expenses, repayments):
+    for module in (auth, me, groups, expenses, repayments, receipts):
         app.include_router(module.router, prefix="/api")
 
     @app.get("/api/health", tags=["meta"])
@@ -47,6 +47,8 @@ def create_app() -> FastAPI:
                 # Public OAuth client id (not a secret): the app passes it to Google Sign-In.
                 "google_web_client_id": (settings.google_client_id_list or [None])[0],
                 "receipt_storage": settings.storage_backend,
+                # Receipt text is recognised on the phone (ML Kit); the server only structures it.
+                "ocr": "on-device",
             },
         }
 

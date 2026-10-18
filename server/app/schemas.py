@@ -142,6 +142,7 @@ class MemberOut(Out):
     is_me: bool = False
     is_registered: bool = False
     avatar_hue: int = 260
+    upi_id: str | None = None  # only if the person added one to their profile
 
 
 class BalanceLine(BaseModel):
