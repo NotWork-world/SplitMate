@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import {View} from 'react-native';
 import {Ban, History, Pencil, Trash2} from 'lucide-react-native';
 import {errorMessage, useCancelExpenseMutation, useExpenseQuery, useGroupQuery} from '../../api/endpoints';
@@ -39,7 +39,8 @@ export function ExpenseDetailScreen({route, navigation}: AppScreen<'ExpenseDetai
   const [cancel, cancelState] = useCancelExpenseMutation();
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const existingDraft = useAppSelector(s => Object.values(s.drafts.byId).find(d => d.serverId === expenseId));
+  const draftsById = useAppSelector(s => s.drafts.byId);
+  const existingDraft = useMemo(() => Object.values(draftsById).find(d => d.serverId === expenseId), [draftsById, expenseId]);
 
   return (
     <Screen header={<Header title="Expense" />} refreshing={q.isFetching && !q.isLoading} onRefresh={q.refetch}>

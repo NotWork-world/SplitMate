@@ -51,7 +51,7 @@ async function setup() {
           <ToastProvider>
             <NavigationContainer>
               <Stack.Navigator>
-                <Stack.Screen name="ClaimDishes" component={ClaimDishesScreen} initialParams={{localId: d.localId}} />
+                <Stack.Screen name="ClaimDishes" component={ClaimDishesScreen as any} initialParams={{localId: d.localId}} />
                 <Stack.Screen name="BillReview" component={() => null} />
               </Stack.Navigator>
             </NavigationContainer>

@@ -4,13 +4,13 @@ import {ThemePreference} from './design/theme';
 
 const KEY = 'splitmate.theme';
 const Ctx = createContext<{preference: ThemePreference; setPreference: (p: ThemePreference) => void}>({
-  preference: 'dark',
+  preference: 'light',
   setPreference: () => {},
 });
 
 export function ThemePreferenceProvider({children}: {children: (p: ThemePreference) => React.ReactNode}) {
-  // Dark is the signature look; people can switch to light or follow the system in Settings.
-  const [preference, setPref] = useState<ThemePreference>('dark');
+  // Light (cream & forest) is the signature look; dark and system are options in Settings.
+  const [preference, setPref] = useState<ThemePreference>('light');
   useEffect(() => {
     AsyncStorage.getItem(KEY)
       .then(v => {

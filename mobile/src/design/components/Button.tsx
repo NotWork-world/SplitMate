@@ -51,12 +51,22 @@ export function Button({
   accessibilityHint,
   testID,
 }: ButtonProps) {
-  const {colors} = useTheme();
+  const {colors, dark} = useTheme();
   const press = usePressScale();
   const inactive = disabled || loading;
   const height = size === 'lg' ? 56 : size === 'sm' ? 40 : touch;
-  const filled = variant === 'primary' || variant === 'food' || variant === 'danger';
-  const fg = filled ? '#FFFFFF' : variant === 'secondary' ? colors.text : colors.accentText;
+  const fg =
+    variant === 'primary'
+      ? dark
+        ? '#1F3B2D'
+        : '#FFFFFF'
+      : variant === 'food'
+      ? colors.highlightText
+      : variant === 'danger'
+      ? '#FFFFFF'
+      : variant === 'secondary'
+      ? colors.text
+      : colors.accentText;
   return (
     <AnimatedPressable
       testID={testID}
@@ -139,6 +149,7 @@ export function IconButton({
           borderRadius: size / 2,
           alignItems: 'center',
           justifyContent: 'center',
+          overflow: 'hidden',
           backgroundColor: filled ? colors.surfaceStrong : 'transparent',
           borderWidth: filled ? StyleSheet.hairlineWidth : 0,
           borderColor: colors.border,

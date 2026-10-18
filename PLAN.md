@@ -176,47 +176,50 @@ never an unrelated photo.
 
 ## 8. Milestones & checklist
 
-### Phase 1 — Foundation
+Status as of 2026-10-18. "Verified" means an automated test or a run on the Android 36 emulator against the real API and PostgreSQL.
+
+### Phase 1 — Foundation ✅
 - [x] Audit repo + org conventions, confirm decisions
-- [x] PLAN.md
-- [ ] Git repo, .gitignore, .env.example, README skeleton
-- [ ] Server skeleton: config, DB session, Alembic, health endpoint
-- [ ] Money engine (Python) + exhaustive tests + shared fixtures
+- [x] PLAN.md, README, .gitignore, .env.example
+- [x] Money engine (Python) + 31 hand-calculated shared fixtures + property tests
 
-### Phase 2 — Backend core
-- [ ] Schema + first migration (tested on SQLite and Postgres)
-- [ ] Auth (register/login/refresh/logout/Google), profile
-- [ ] Groups, members (placeholders), invites, authorization helpers
-- [ ] Expenses: drafts, items, finalize (transactional, idempotent), edit, cancel
-- [ ] Ledger, balances, settlement suggestions
-- [ ] Repayments state machine
-- [ ] Activity, notifications, audit, export, deletion
-- [ ] Security tests (IDOR, auth, validation)
+### Phase 2 — Backend core ✅ (69 pytest tests, SQLite and PostgreSQL 17)
+- [x] Schema + Alembic migration (`alembic check` clean on Postgres)
+- [x] Auth: register/login/refresh rotation with reuse detection/logout/Google (mocked verifier)
+- [x] Groups, placeholder members, invites, permissions, cross-group isolation
+- [x] Expenses: drafts, finalize (transactional, idempotent, concurrent-safe), edit with ledger reversal, cancel
+- [x] Ledger, balances, settlement suggestions, per-member ledger lines
+- [x] Repayment state machine (confirm once, disputes/rejections never settle)
+- [x] Activity, notifications with preferences, audit events, export, account deletion
+- [x] Docker image runs migrations and serves (verified)
 
-### Phase 3 — Mobile foundation
-- [ ] RN 0.87 project, Android config for Play (API 36, R8, signing like KonPDF)
-- [ ] Design system + fonts, navigation, API client, secure token storage
-- [ ] TS money engine passing the shared fixtures (Jest)
-- [ ] Splash, onboarding, auth, session restore
+### Phase 3 — Mobile foundation ✅
+- [x] RN 0.87 Android project: API 36, R8, upload-key signing, versionCode from package.json
+- [x] Design system, fonts, icons, navigation, secure token storage, session restore
+- [x] TS money engine: identical to Python on 300 generated bills + all fixtures (Jest)
+- [x] Splash, onboarding, sign up/in (verified on emulator)
 
-### Phase 4 — Mobile workflows
-- [ ] Home, groups, group detail, members, invites
-- [ ] Add expense (manual, equal/exact/%/shares), itemised editor, discounts, GST, charges
-- [ ] Swipe-to-claim allocation (+ non-swipe list mode), final bill review, finalize
-- [ ] Expense detail + audit trail, edit/cancel
-- [ ] Balances, settlement suggestions, repayments
-- [ ] Activity & notifications, profile, settings, export, delete account
+### Phase 4 — Mobile workflows ✅
+- [x] Home, groups, group detail, members, invites, join by code
+- [x] Expense editor: itemised and simple (equal/exact/%/shares), discounts, GST, charges, rounding, receipt total, multiple payers
+- [x] Swipe-to-claim with Claim/Skip/Undo buttons and a list view; no silent assignment (verified on device + RNTL tests)
+- [x] Bill review and finalise (₹630.00 example verified on device)
+- [x] Expense detail with audit history, edit, cancel/delete
+- [x] Balances, settle-up, repayment request → marked sent → confirmed (verified on device)
+- [x] Activity, notifications, profile, settings, export, delete account, privacy
 
-### Phase 5 — Receipts & OCR
-- [ ] Image pick/capture, upload, private storage, signed URLs
-- [ ] On-device text recognition (ML Kit) → server receipt parser → editable review with confidence and total reconciliation
-- [ ] Clear "not available" path; manual entry always works
+### Phase 5 — Receipts & OCR ✅ (server parser + upload tested; on-device ML Kit not yet exercised with a real photo)
+- [x] Photo picker/camera, upload with validation, private storage, signed URLs
+- [x] ML Kit on-device text → server parser → review with confidence and total checks
+- [x] Manual entry works without any of it
 
-### Phase 6 — Play Store & polish
-- [ ] Icon, splash, store listing, privacy policy, Data-safety answers
-- [ ] Render + Neon deploy docs, render.yaml
-- [ ] Release build, emulator walkthrough of the 10-step workflow, accessibility pass
-
+### Phase 6 — Play Store & polish (in progress)
+- [x] Launcher icons, store icon, feature graphic, listing text, privacy policy, Data-safety answers
+- [x] Render + Neon deploy docs, render.yaml
+- [x] Keyboard-safe footers and sheets on edge-to-edge Android (found on device)
+- [ ] Release build verified (R8 + 16 KB alignment)
+- [ ] Screenshots for the listing
+- [ ] Push notifications (FCM) — needs a Firebase project
 ## 9. Risks
 
 | Risk | Mitigation |

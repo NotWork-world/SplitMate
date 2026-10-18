@@ -63,6 +63,10 @@ export const splitApi = createApi({
     }),
     summary: b.query<Summary, void>({query: () => '/me/summary', providesTags: ['Summary']}),
     myBalances: b.query<MyBalances, void>({query: () => '/me/balances', providesTags: ['Balances']}),
+    spending: b.query<{currency: string; months: Array<{month: string; amount_minor: number}>}, number>({
+      query: months => `/me/spending?months=${months}`,
+      providesTags: ['Summary'],
+    }),
     exportData: b.mutation<any, void>({query: () => ({url: '/me/export'})}),
     deleteAccount: b.mutation<void, {confirm: 'DELETE'; password?: string}>({
       query: body => ({url: '/me/delete', method: 'POST', body}),
@@ -114,8 +118,8 @@ export const splitApi = createApi({
       query: ({groupId, ...p}) => `${groupId ? `/groups/${groupId}` : ''}/expenses${qs({...p, limit: 30})}`,
       providesTags: ['Expenses'],
       serializeQueryArgs: ({queryArgs}) => {
-        const {offset: _o, ...rest} = queryArgs;
-        return rest;
+        // Every page of the same list shares one cache entry (pages are merged below).
+        return {groupId: queryArgs.groupId, status: queryArgs.status, category: queryArgs.category, q: queryArgs.q};
       },
       merge: (cache, incoming, {arg}) => {
         if (!arg.offset) {
@@ -188,6 +192,7 @@ export const {
   useChangePasswordMutation,
   useSummaryQuery,
   useMyBalancesQuery,
+  useSpendingQuery,
   useExportDataMutation,
   useDeleteAccountMutation,
   useGroupsQuery,

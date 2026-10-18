@@ -117,7 +117,7 @@ export function PeopleShares({
             <Pressable
               accessibilityRole="button"
               accessibilityState={{expanded}}
-              accessibilityLabel={`${name} pays ${formatMoney(p.total, r.currency)}`}
+              accessibilityLabel={`${name} ${m?.is_me ? 'pay' : 'pays'} ${formatMoney(p.total, r.currency)}`}
               onPress={() => setOpen(expanded ? null : p.member_id)}
               style={{flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md}}>
               <Avatar name={m?.display_name ?? '?'} hue={m?.avatar_hue} size={36} />

@@ -57,6 +57,7 @@ function TabBar({state, navigation}: BottomTabBarProps) {
           }
         }}
         style={styles.tab}>
+        {focused ? <View style={[styles.indicator, {backgroundColor: colors.highlight}]} /> : null}
         <Icon size={22} color={focused ? colors.accentText : colors.textFaint} strokeWidth={focused ? 2.4 : 2} />
         <Text variant="caption" color={focused ? colors.accentText : colors.textFaint}>
           {route.name}
@@ -78,8 +79,8 @@ function TabBar({state, navigation}: BottomTabBarProps) {
             navigation.getParent()?.navigate('StartExpense', {mode: 'itemized'});
           }}
           style={styles.fab}>
-          <Gradient colors={colors.gradientFood} />
-          <Plus size={28} color="#fff" strokeWidth={2.6} />
+          <Gradient colors={colors.gradient} />
+          <Plus size={28} color={colors.bg} strokeWidth={2.6} />
         </Pressable>
       </View>
       {renderTab(2)}
@@ -88,9 +89,11 @@ function TabBar({state, navigation}: BottomTabBarProps) {
   );
 }
 
+const renderTabBar = (props: BottomTabBarProps) => <TabBar {...props} />;
+
 function MainTabs() {
   return (
-    <Tabs.Navigator screenOptions={{headerShown: false}} tabBar={props => <TabBar {...props} />}>
+    <Tabs.Navigator screenOptions={{headerShown: false}} tabBar={renderTabBar}>
       <Tabs.Screen name="Home" component={HomeScreen} />
       <Tabs.Screen name="Groups" component={GroupsScreen} />
       <Tabs.Screen name="Activity" component={ActivityScreen} />
@@ -156,6 +159,7 @@ export function RootNavigator() {
 const styles = StyleSheet.create({
   bar: {flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8},
   tab: {flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, minHeight: 48},
+  indicator: {position: 'absolute', top: 2, width: 52, height: 30, borderRadius: 15},
   fabSlot: {width: 76, alignItems: 'center'},
   fab: {
     width: 58,
@@ -166,8 +170,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 8,
-    shadowColor: '#FF7A59',
-    shadowOpacity: 0.5,
+    shadowColor: '#1F3B2D',
+    shadowOpacity: 0.25,
     shadowRadius: 14,
     shadowOffset: {width: 0, height: 6},
   },

@@ -41,7 +41,6 @@ export type AppScreen<T extends keyof AppParams> = NativeStackScreenProps<AppPar
 export type AuthScreen<T extends keyof AuthParams> = NativeStackScreenProps<AuthParams, T>;
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace ReactNavigation {
     interface RootParamList extends AppParams {}
   }

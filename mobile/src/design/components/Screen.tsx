@@ -1,7 +1,5 @@
 import React from 'react';
 import {
-  KeyboardAvoidingView,
-  Platform,
   RefreshControl,
   ScrollView,
   ScrollViewProps,
@@ -16,8 +14,8 @@ import {useNavigation} from '@react-navigation/native';
 import {ArrowLeft} from 'lucide-react-native';
 import {useTheme} from '../theme';
 import {space} from '../tokens';
+import {useKeyboardHeight} from '../useKeyboardHeight';
 import {IconButton} from './Button';
-import {Glow} from './Surface';
 import {Text} from './Text';
 
 export function Screen({
@@ -28,7 +26,6 @@ export function Screen({
   refreshing,
   onRefresh,
   contentStyle,
-  glow = true,
   keyboard,
   scrollProps,
 }: {
@@ -39,12 +36,12 @@ export function Screen({
   refreshing?: boolean;
   onRefresh?: () => void;
   contentStyle?: StyleProp<ViewStyle>;
-  glow?: boolean;
   keyboard?: boolean;
   scrollProps?: ScrollViewProps;
 }) {
-  const {colors, dark} = useTheme();
+  const {colors} = useTheme();
   const insets = useSafeAreaInsets();
+  const kb = useKeyboardHeight();
   const body = scroll ? (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -67,20 +64,14 @@ export function Screen({
     <View style={[styles.content, {flex: 1}, contentStyle]}>{children}</View>
   );
   return (
-    <View style={[styles.root, {backgroundColor: colors.bg, paddingTop: insets.top}]}>
+    <View style={[styles.root, {backgroundColor: colors.bg, paddingTop: insets.top, paddingBottom: keyboard && kb ? kb : 0}]}>
       <StatusBar barStyle={colors.statusBar} />
-      {glow && dark ? (
-        <>
-          <Glow color={colors.accent} size={420} style={{top: -200, right: -160}} />
-          <Glow color={colors.food} size={300} style={{top: 120, left: -220}} />
-        </>
-      ) : null}
       {header}
       {keyboard ? (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={{flex: 1}}>
           {body}
           {footer}
-        </KeyboardAvoidingView>
+        </View>
       ) : (
         <>
           {body}
@@ -108,7 +99,7 @@ export function Header({
   return (
     <View style={styles.header}>
       {back ? (
-        <IconButton icon={ArrowLeft} label="Back" onPress={onBack ?? (() => nav.goBack())} />
+        <IconButton icon={ArrowLeft} label="Back" filled onPress={onBack ?? (() => nav.goBack())} />
       ) : (
         <View style={{width: space.sm}} />
       )}

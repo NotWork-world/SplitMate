@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import delete, func, select, update
@@ -314,3 +314,41 @@ def delete_account(body: DeleteAccountIn, user: User = Depends(current_user), db
     user.preferences = {}
     user.deleted_at = utcnow()
     db.commit()
+
+@router.get("/me/spending")
+def spending(
+    months: int = Query(6, ge=1, le=12),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Your own share of finalised expenses per month (what you consumed, not what you paid)."""
+    today = datetime.now(timezone.utc).date()
+    keys = []
+    y, mth = today.year, today.month
+    for _ in range(months):
+        keys.append((y, mth))
+        y, mth = (y, mth - 1) if mth > 1 else (y - 1, 12)
+    keys.reverse()
+    start = date(keys[0][0], keys[0][1], 1)
+    member_ids = [m.id for m, _ in my_memberships(db, user)]
+    rows = db.execute(
+        select(Expense.currency, Expense.expense_date, ExpenseAllocation.amount_minor)
+        .join(Expense, Expense.id == ExpenseAllocation.expense_id)
+        .where(
+            ExpenseAllocation.member_id.in_(member_ids),
+            Expense.status == "finalized",
+            Expense.expense_date >= start,
+        )
+    ).all()
+    totals: dict[str, dict[tuple[int, int], int]] = defaultdict(lambda: defaultdict(int))
+    for cur, d, amount in rows:
+        totals[cur][(d.year, d.month)] += amount
+    currency = user.default_currency if user.default_currency in totals or not totals else max(
+        totals, key=lambda c: sum(totals[c].values())
+    )
+    return {
+        "currency": currency,
+        "months": [
+            {"month": f"{yy:04d}-{mm:02d}", "amount_minor": totals.get(currency, {}).get((yy, mm), 0)} for yy, mm in keys
+        ],
+    }

@@ -14,7 +14,7 @@ export interface FieldProps extends TextInputProps {
   containerStyle?: StyleProp<ViewStyle>;
 }
 
-export const TextField = forwardRef<React.ComponentRef<typeof TextInput>, FieldProps>(function TextField(
+export const TextField = forwardRef<React.ComponentRef<typeof TextInput>, FieldProps>(function TextFieldImpl(
   {label, error, hint, prefix, suffix, containerStyle, style, editable = true, ...rest},
   ref,
 ) {

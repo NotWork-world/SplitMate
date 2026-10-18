@@ -10,7 +10,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import {Check, LayoutList, Layers, Pencil, RotateCcw, SlidersHorizontal, Users, X} from 'lucide-react-native';
+import {ChevronLeft, ChevronRight, LayoutList, Layers, Pencil, RotateCcw, SlidersHorizontal, Users} from 'lucide-react-native';
 import {useGroupQuery} from '../../api/endpoints';
 import type {ExpensePayload, ItemPayload, Member} from '../../api/types';
 import {
@@ -83,7 +83,6 @@ export function ClaimDishesScreen({route, navigation}: AppScreen<'ClaimDishes'>)
   );
   const startIndex = startAt ? queue.findIndex(i => i.client_id === startAt) : -1;
   const current = startIndex > 0 ? queue[startIndex] : queue[0];
-  const nextUp = queue.find(i => i !== current);
   const reviewed = items.filter(i => i.review_state !== 'pending' || i.consumers.length).length;
   const unassigned = items.filter(i => !i.consumers.length);
 
@@ -163,7 +162,6 @@ export function ClaimDishesScreen({route, navigation}: AppScreen<'ClaimDishes'>)
     <Screen
       header={header}
       scroll={listMode || !current}
-      glow={false}
       footer={
         <Footer>
           {listMode || !current ? (
@@ -176,16 +174,8 @@ export function ClaimDishesScreen({route, navigation}: AppScreen<'ClaimDishes'>)
             />
           ) : (
             <View style={styles.controls}>
-              <RoundButton icon={X} label="Skip for now" color={colors.negative} onPress={() => skip(current)} testID="claim-skip" />
-              <RoundButton icon={RotateCcw} label="Undo" small disabled={!undo.length} color={colors.textMuted} onPress={doUndo} testID="claim-undo" />
-              <RoundButton
-                icon={Check}
-                label="Claim"
-                color={colors.positive}
-                disabled={!selection.length}
-                onPress={() => claim(current, selection)}
-                testID="claim-claim"
-              />
+              <Button label="Undo" icon={RotateCcw} variant="secondary" size="sm" disabled={!undo.length} onPress={doUndo} testID="claim-undo" style={{flex: 1}} />
+              <Button label="List view" icon={LayoutList} variant="secondary" size="sm" onPress={() => setListMode(true)} style={{flex: 1}} />
             </View>
           )}
         </Footer>
@@ -198,7 +188,8 @@ export function ClaimDishesScreen({route, navigation}: AppScreen<'ClaimDishes'>)
         <ListAlternative payload={payload} members={members} onSet={(it, ids) => (ids.length ? claim(it, ids) : update(it.client_id, {consumers: [], review_state: 'skipped'}))} onCustom={setCustomFor} onEdit={setEditing} />
       ) : current ? (
         <View style={{flex: 1, marginTop: space.lg}}>
-          {nextUp ? <BackCard item={nextUp} currency={payload.currency} /> : null}
+          <UpcomingTabs items={queue.filter(i => i !== current).slice(0, 3)} />
+          <View>
           <SwipeCard
             key={current.client_id}
             item={current}
@@ -211,8 +202,11 @@ export function ClaimDishesScreen({route, navigation}: AppScreen<'ClaimDishes'>)
             onEdit={() => setEditing(current)}
             onCustom={() => setCustomFor(current)}
           />
+          <SideArrow side="left" label="Skip for now" color={colors.negative} onPress={() => skip(current)} testID="claim-skip" />
+          <SideArrow side="right" label="Claim" color={colors.positive} disabled={!selection.length} onPress={() => claim(current, selection)} testID="claim-claim" />
+          </View>
           <Text variant="caption" tone="faint" align="center" style={{marginTop: space.md}}>
-            Pick who had it, then swipe right or tap ✓ · swipe left to skip
+            Pick who had it, then swipe right or tap › · swipe left or ‹ to skip
           </Text>
         </View>
       ) : (
@@ -399,8 +393,8 @@ function SwipeCard({
           </Text>
         </Animated.View>
 
-        <View style={{flexDirection: 'row', gap: space.lg, alignItems: 'center'}}>
-          <DishVisual name={item.name} size={88} rounded={24} />
+        <DishVisual name={item.name} size={150} rounded={20} wide />
+        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: space.md}}>
           <View style={{flex: 1}}>
             <Text variant="title" numberOfLines={2} accessibilityRole="header">
               {item.name}
@@ -470,24 +464,34 @@ function SwipeCard({
   );
 }
 
-function BackCard({item, currency}: {item: ItemPayload; currency: string}) {
-  const {colors} = useTheme();
+const TAB_COLORS = ['#D9E99A', '#B9D6EE', '#E4D2F3'];
+
+/** The next dishes peek out above the card as coloured tabs, like a stack of menu cards. */
+function UpcomingTabs({items}: {items: ItemPayload[]}) {
   return (
-    <View
-      pointerEvents="none"
-      importantForAccessibility="no-hide-descendants"
-      style={[styles.card, styles.backCard, {backgroundColor: colors.bgElevated, borderColor: colors.border}]}>
-      <View style={{flexDirection: 'row', gap: space.md, alignItems: 'center', opacity: 0.6}}>
-        <DishVisual name={item.name} size={48} />
-        <Text variant="bodyStrong" style={{flex: 1}} numberOfLines={1}>
-          Next: {item.name}
-        </Text>
-        <Text variant="amountSmall">{formatMoney(item.unit_price_minor, currency)}</Text>
-      </View>
+    <View pointerEvents="none" importantForAccessibility="no-hide-descendants" style={{height: items.length ? items.length * 30 : 0}}>
+      {[...items].reverse().map((it, i, arr) => {
+        const depth = arr.length - i; // 1 = closest to the card
+        return (
+          <View
+            key={it.client_id}
+            style={[
+              styles.tab,
+              {
+                backgroundColor: TAB_COLORS[(depth - 1) % TAB_COLORS.length],
+                top: (arr.length - depth) * 30,
+                marginHorizontal: 22 + depth * 12,
+              },
+            ]}>
+            <Text variant="title" color="#1A2620" numberOfLines={1} align="center" style={{fontSize: 22, lineHeight: 28}}>
+              {it.name}
+            </Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
-
 function Figure({label, value, tone, strong}: {label: string; value: string; tone?: 'positive'; strong?: boolean}) {
   return (
     <View style={{flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3}}>
@@ -501,54 +505,45 @@ function Figure({label, value, tone, strong}: {label: string; value: string; ton
   );
 }
 
-function RoundButton({
-  icon: Icon,
+function SideArrow({
+  side,
   label,
   color,
   onPress,
   disabled,
-  small,
   testID,
 }: {
-  icon: any;
+  side: 'left' | 'right';
   label: string;
   color: string;
   onPress: () => void;
   disabled?: boolean;
-  small?: boolean;
   testID?: string;
 }) {
-  const {colors} = useTheme();
-  const size = small ? 52 : 68;
+  const Icon = side === 'left' ? ChevronLeft : ChevronRight;
   return (
-    <View style={{alignItems: 'center', gap: 4}}>
-      <Pressable
-        testID={testID}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        accessibilityState={{disabled: !!disabled}}
-        disabled={disabled}
-        onPress={onPress}
-        style={({pressed}) => ({
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          borderWidth: 2,
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{disabled: !!disabled}}
+      disabled={disabled}
+      onPress={onPress}
+      hitSlop={8}
+      style={({pressed}) => [
+        styles.arrow,
+        side === 'left' ? {left: -4} : {right: -4},
+        {
           borderColor: color,
-          backgroundColor: pressed ? colors.surfacePressed : colors.surface,
-          alignItems: 'center',
-          justifyContent: 'center',
+          shadowColor: color,
+          backgroundColor: pressed ? '#EEF5CF' : '#FFFFFF',
           opacity: disabled ? 0.35 : 1,
-        })}>
-        <Icon size={small ? 22 : 30} color={color} strokeWidth={2.6} />
-      </Pressable>
-      <Text variant="caption" tone="muted">
-        {label}
-      </Text>
-    </View>
+        },
+      ]}>
+      <Icon size={32} color={color} strokeWidth={2.6} />
+    </Pressable>
   );
 }
-
 // ------------------------------------------------------------------ non-swipe alternative
 
 function ListAlternative({
@@ -757,19 +752,21 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: radius.xl,
     borderWidth: 1,
-    padding: space.xl,
+    marginHorizontal: 22,
+    padding: space.lg,
     shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 30,
-    shadowOffset: {width: 0, height: 16},
-    elevation: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    shadowOffset: {width: 0, height: 8},
+    elevation: 3,
   },
-  backCard: {position: 'absolute', left: 14, right: 14, top: -14, padding: space.lg, elevation: 2, transform: [{scale: 0.96}]},
   stamp: {position: 'absolute', top: 18, zIndex: 2, borderWidth: 3, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 4},
   stampRight: {left: 18, transform: [{rotate: '-12deg'}]},
   stampLeft: {right: 18, transform: [{rotate: '12deg'}]},
   figures: {marginTop: space.lg, paddingTop: space.md, borderTopWidth: StyleSheet.hairlineWidth},
   people: {flexDirection: 'row', flexWrap: 'wrap', gap: space.sm},
   person: {flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 6, paddingLeft: 6, paddingRight: space.md, borderRadius: radius.pill, borderWidth: 1, minHeight: 48, maxWidth: '48%'},
-  controls: {flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'center'},
+  controls: {flexDirection: 'row', gap: space.sm},
+  tab: {position: 'absolute', left: 0, right: 0, height: 48, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingTop: 8, paddingHorizontal: space.md},
+  arrow: {position: 'absolute', top: 58, width: 50, height: 66, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', shadowOpacity: 0.9, shadowRadius: 12, shadowOffset: {width: 0, height: 0}, elevation: 8},
 });

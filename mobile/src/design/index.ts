@@ -14,3 +14,4 @@ export * from './components/Controls';
 export * from './components/Sheet';
 export * from './components/Wordmark';
 export * from './components/DishVisual';
+export * from './useKeyboardHeight';

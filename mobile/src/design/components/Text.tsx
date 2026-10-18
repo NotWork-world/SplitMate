@@ -1,7 +1,7 @@
 import React from 'react';
 import {Text as RNText, TextProps, TextStyle} from 'react-native';
 import {useTheme} from '../theme';
-import {type as typeScale, TypeVariant} from '../tokens';
+import {fonts, type as typeScale, TypeVariant} from '../tokens';
 
 type Tone = 'default' | 'muted' | 'faint' | 'accent' | 'positive' | 'negative' | 'food' | 'warning' | 'inverse';
 
@@ -39,4 +39,9 @@ export function Text({variant = 'body', tone = 'default', color, align, tabular,
       ]}
     />
   );
+}
+
+/** Italic serif accent inside a serif headline: <Text variant="hero">Split <Accent>only</Accent> what you shared</Text>. */
+export function Accent({children, color}: {children: React.ReactNode; color?: string}) {
+  return <RNText style={{fontFamily: fonts.serifItalic, color}}>{children}</RNText>;
 }

@@ -1,4 +1,4 @@
-import React, {useEffect} from 'react';
+import React, {useEffect, useMemo} from 'react';
 import {useGroupsQuery} from '../../api/endpoints';
 import type {Group} from '../../api/types';
 import {Card, EmptyState, GROUP_TYPE_META, Header, ListRow, Screen, SectionTitle, Text, space} from '../../design';
@@ -12,7 +12,11 @@ export function StartExpenseScreen({route, navigation}: AppScreen<'StartExpense'
   const {groupId, mode = 'itemized'} = route.params ?? {};
   const dispatch = useAppDispatch();
   const groups = useGroupsQuery({includePersonal: true});
-  const localDrafts = useAppSelector(s => Object.values(s.drafts.byId).filter(d => !d.serverId).sort((a, b) => b.updatedAt - a.updatedAt));
+  const draftsById = useAppSelector(s => s.drafts.byId);
+  const localDrafts = useMemo(
+    () => Object.values(draftsById).filter(d => !d.serverId).sort((a, b) => b.updatedAt - a.updatedAt),
+    [draftsById],
+  );
 
   const start = (g: Group) => {
     const d = createDraft(g.id, emptyPayload(g.currency, g.my_member_id, mode === 'itemized'));

@@ -4,12 +4,46 @@ import {GoogleSignin, statusCodes} from '@react-native-google-signin/google-sign
 import {api, ApiError} from '../../api/client';
 import {useHealthQuery} from '../../api/endpoints';
 import type {TokenOut} from '../../api/types';
-import {Banner, Button, Header, Screen, Text, TextField, Wordmark, space, useTheme} from '../../design';
+import {Accent, Banner, Button, Card, Header, LogoMark, Screen, Text, TextField, space, useTheme} from '../../design';
 import type {AuthScreen} from '../../navigation/types';
 import {useAppDispatch} from '../../store';
 import {completeSignIn} from './session';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Shared sign-in / sign-up frame: logo, headline, then the form on a glass card. */
+function AuthLayout({title, subtitle, children}: {title: React.ReactNode; subtitle: string; children: React.ReactNode}) {
+  return (
+    <Screen header={<Header />} keyboard>
+      <View style={{alignItems: 'center', marginTop: space.sm}}>
+        <View style={{backgroundColor: '#DCE3D1', padding: 12, borderRadius: 24}}>
+          <LogoMark size={60} framed />
+        </View>
+        <Text variant="hero" align="center" style={{marginTop: space.lg, alignSelf: 'stretch'}}>
+          {title}
+        </Text>
+        <Text variant="body" tone="muted" align="center" style={{marginTop: space.xs, maxWidth: 320}}>
+          {subtitle}
+        </Text>
+      </View>
+      <Card strong style={{marginTop: space.xl, gap: space.lg, padding: space.xl}}>
+        {children}
+      </Card>
+    </Screen>
+  );
+}
+
+function OrDivider() {
+  const {colors} = useTheme();
+  return (
+    <View style={{flexDirection: 'row', alignItems: 'center', gap: space.md}}>
+      <View style={{flex: 1, height: 1, backgroundColor: colors.border}} />
+      <Text variant="caption" tone="faint">
+        OR
+      </Text>
+      <View style={{flex: 1, height: 1, backgroundColor: colors.border}} />
+    </View>
+  );
+}
 
 function GoogleButton({onError}: {onError: (m: string | null) => void}) {
   const dispatch = useAppDispatch();
@@ -86,16 +120,9 @@ export function SignInScreen({navigation}: AuthScreen<'SignIn'>) {
   };
 
   return (
-    <Screen header={<Header />} keyboard>
-      <Wordmark size={22} />
-      <Text variant="title" style={{marginTop: space.xl}}>
-        Welcome back
-      </Text>
-      <Text variant="body" tone="muted" style={{marginTop: space.xs, marginBottom: space.xl}}>
-        Sign in to see your groups and balances.
-      </Text>
+    <AuthLayout title={<>Welcome <Accent>back</Accent></>} subtitle="Sign in to see your groups, balances and anything waiting for you.">
       {error ? <Banner tone="negative" title={error} /> : null}
-      <View style={{gap: space.lg, marginTop: space.md}}>
+      <View style={{gap: space.lg}}>
         <TextField
           label="Email"
           value={email}
@@ -117,10 +144,11 @@ export function SignInScreen({navigation}: AuthScreen<'SignIn'>) {
           testID="signin-password"
         />
         <Button label="Sign in" size="lg" onPress={submit} loading={busy} testID="signin-submit" />
+        <OrDivider />
         <GoogleButton onError={setError} />
-        <SwitchLink text="New to SplitMate?" action="Create an account" onPress={() => navigation.replace('SignUp')} />
       </View>
-    </Screen>
+      <SwitchLink text="New to SplitMate?" action="Create an account" onPress={() => navigation.replace('SignUp')} />
+    </AuthLayout>
   );
 }
 
@@ -160,16 +188,9 @@ export function SignUpScreen({navigation}: AuthScreen<'SignUp'>) {
   };
 
   return (
-    <Screen header={<Header />} keyboard>
-      <Wordmark size={22} />
-      <Text variant="title" style={{marginTop: space.xl}}>
-        Create your account
-      </Text>
-      <Text variant="body" tone="muted" style={{marginTop: space.xs, marginBottom: space.xl}}>
-        Free, no ads. Your friends don't need the app to be in a group.
-      </Text>
+    <AuthLayout title={<>Create your <Accent>account</Accent></>} subtitle="Free, no ads. Your friends don't need the app to be in your group.">
       {error ? <Banner tone="negative" title={error} /> : null}
-      <View style={{gap: space.lg, marginTop: space.md}}>
+      <View style={{gap: space.lg}}>
         <TextField label="Your name" value={name} onChangeText={setName} autoComplete="name" error={errs.name} testID="signup-name" />
         <TextField
           label="Email"
@@ -192,13 +213,14 @@ export function SignUpScreen({navigation}: AuthScreen<'SignUp'>) {
           testID="signup-password"
         />
         <Button label="Create account" size="lg" onPress={submit} loading={busy} testID="signup-submit" />
+        <OrDivider />
         <GoogleButton onError={setError} />
         <Text variant="small" tone="faint" align="center">
           By continuing you agree to SplitMate's privacy policy (Settings → Privacy).
         </Text>
-        <SwitchLink text="Already have an account?" action="Sign in" onPress={() => navigation.replace('SignIn')} />
       </View>
-    </Screen>
+      <SwitchLink text="Already have an account?" action="Sign in" onPress={() => navigation.replace('SignIn')} />
+    </AuthLayout>
   );
 }
 

@@ -7,52 +7,73 @@ fastlane/metadata/android/en-US/images/{icon.png, featureGraphic.png}.
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "android" / "app" / "src" / "main" / "res"
 STORE = ROOT / "fastlane" / "metadata" / "android" / "en-US" / "images"
 FONT = ROOT / "android" / "app" / "src" / "main" / "assets" / "fonts" / "Manrope-ExtraBold.ttf"
 
-MIDNIGHT = (11, 15, 31)
-INDIGO = (20, 26, 51)
-VIOLET_A, VIOLET_B = (148, 121, 255), (79, 70, 229)
-CORAL_A, CORAL_B = (255, 148, 111), (255, 94, 138)
+SAGE = (220, 227, 209)
+SAGE_DEEP = (205, 214, 192)
+GOLD_A, GOLD_B = (205, 168, 110), (154, 114, 64)
+FOREST = (31, 59, 45)
+CREAM = (246, 247, 236)
+LIME = (217, 233, 154)
 SS = 4  # supersampling for smooth edges
 
 
 def gradient(size, a, b):
+    """Diagonal gradient from a (top-left) to b (bottom-right), built with Pillow ops (fast)."""
     w, h = size
-    g = Image.new("RGB", size)
-    px = g.load()
-    for y in range(h):
-        for x in range(w):
-            t = (x + y) / (w + h - 2)
-            px[x, y] = tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
-    return g
+    v = Image.linear_gradient("L").resize((w, h))
+    hgrad = Image.linear_gradient("L").rotate(90).resize((w, h)).transpose(Image.FLIP_LEFT_RIGHT)
+    mask = ImageChops.add(v, hgrad, scale=2.0)
+    return Image.composite(Image.new("RGB", size, b), Image.new("RGB", size, a), mask)
 
 
-def mark(size: int) -> Image.Image:
-    """The plate split in two: violet half (left), coral half (right), white dot."""
+def mark(size: int, framed: bool = False) -> Image.Image:
+    """Same geometry as LogoMark in src/design/components/Wordmark.tsx (64-unit grid)."""
     s = size * SS
-    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    u = s / 64  # logo viewBox is 64x64
+    u = s / 64
+    m = Image.new("L", (s, s), 0)
+    d = ImageDraw.Draw(m)
+    w = round(6.5 * u)
 
-    def half(box, start, end, colors):
-        m = Image.new("L", (s, s), 0)
-        ImageDraw.Draw(m).pieslice(box, start, end, fill=255)
-        img.paste(gradient((s, s), *colors), (0, 0), m)
+    def line(x1, y1, x2, y2, width=w):
+        d.line([x1 * u, y1 * u, x2 * u, y2 * u], fill=255, width=width)
+        for x, y in ((x1, y1), (x2, y2)):
+            r = width / 2
+            d.ellipse([x * u - r, y * u - r, x * u + r, y * u + r], fill=255)
 
-    half([4 * u, 6 * u, 56 * u, 58 * u], 90, 270, (VIOLET_A, VIOLET_B))  # left half of r=26 at (30,32)
-    half([14 * u, 10 * u, 58 * u, 54 * u], 270, 90, (CORAL_A, CORAL_B))  # right half of r=22 at (36,32)
-    d = ImageDraw.Draw(img)
-    d.ellipse([16 * u, 26 * u, 28 * u, 38 * u], fill=(255, 255, 255, 235))
-    return img.resize((size, size), Image.LANCZOS)
+    def arc(cx, cy, r, start, end):
+        d.arc([(cx - r) * u - w / 2, (cy - r) * u - w / 2, (cx + r) * u + w / 2, (cy + r) * u + w / 2], start, end, fill=255, width=w)
 
+    # S
+    line(27, 14, 18, 14)
+    arc(18, 22, 8, 90, 270)
+    line(18, 30, 20, 30)
+    arc(20, 40, 10, 270, 450)
+    line(20, 50, 10, 50)
+    # C
+    line(55, 14, 44, 14)
+    arc(44, 22, 8, 180, 270)
+    line(36, 22, 36, 42)
+    arc(44, 42, 8, 90, 180)
+    line(44, 50, 55, 50)
+    # divider and arrow
+    d.line([32 * u, 7 * u, 32 * u, 57 * u], fill=255, width=max(1, round(1.6 * u)))
+    line(7, 32, 47, 32, round(4.2 * u))
+    d.polygon([(45 * u, 24.5 * u), (57 * u, 32 * u), (45 * u, 39.5 * u)], fill=255)
+    if framed:
+        d.rounded_rectangle([2 * u, 2 * u, 62 * u, 62 * u], radius=13 * u, outline=255, width=round(2.4 * u))
+    out = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    out.paste(gradient((s, s), GOLD_A, GOLD_B), (0, 0), m)
+    return out.resize((size, size), Image.LANCZOS)
 
-def tile(size: int, round_: bool = False, padding: float = 0.17, square: bool = False) -> Image.Image:
+def tile(size: int, round_: bool = False, padding: float = 0.14, square: bool = False) -> Image.Image:
     s = size * SS
-    bg = gradient((s, s), INDIGO, MIDNIGHT)
+    bg = gradient((s, s), SAGE, SAGE_DEEP)
     mask = Image.new("L", (s, s), 0)
     md = ImageDraw.Draw(mask)
     if square:
@@ -63,10 +84,9 @@ def tile(size: int, round_: bool = False, padding: float = 0.17, square: bool = 
         md.rounded_rectangle([0, 0, s - 1, s - 1], radius=int(s * 0.22), fill=255)
     out = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     out.paste(bg, (0, 0), mask)
-    m = mark(int(s * (1 - 2 * padding)))
+    m = mark(int(s * (1 - 2 * padding)), framed=True)
     out.alpha_composite(m, (int(s * padding), int(s * padding)))
     return out.resize((size, size), Image.LANCZOS)
-
 
 def main() -> None:
     sizes = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
@@ -78,7 +98,7 @@ def main() -> None:
         # Adaptive icon foreground: 108dp canvas, logo inside the 66dp safe zone.
         fg_px = int(px * 108 / 48)
         fg = Image.new("RGBA", (fg_px, fg_px), (0, 0, 0, 0))
-        m = mark(int(fg_px * 0.5))
+        m = mark(int(fg_px * 0.56), framed=True)
         fg.alpha_composite(m, ((fg_px - m.width) // 2, (fg_px - m.height) // 2))
         fg.save(d / "ic_launcher_foreground.png")
 
@@ -87,7 +107,7 @@ def main() -> None:
     xml = (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
-        '    <background android:drawable="@color/splitmate_midnight"/>\n'
+        '    <background android:drawable="@color/splitmate_sage"/>\n'
         '    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>\n'
         '    <monochrome android:drawable="@mipmap/ic_launcher_foreground"/>\n'
         "</adaptive-icon>\n"
@@ -99,21 +119,19 @@ def main() -> None:
     tile(512, padding=0.16, square=True).convert("RGB").save(STORE / "icon.png")
 
     w, h = 1024, 500
-    fgraphic = gradient((w, h), INDIGO, MIDNIGHT).convert("RGBA")
-    glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(glow)
-    for r in range(260, 0, -4):
-        a = int(70 * (1 - r / 260))
-        gd.ellipse([820 - r, 120 - r, 820 + r, 120 + r], fill=(124, 92, 255, a))
-    fgraphic.alpha_composite(glow)
-    fgraphic.alpha_composite(mark(220), (90, 140))
+    fgraphic = Image.new("RGBA", (w, h), CREAM + (255,))
+    gd = ImageDraw.Draw(fgraphic)
+    gd.ellipse([700, -120, 1120, 300], fill=LIME + (255,))
+    fgraphic.alpha_composite(tile(240, padding=0.12), (90, 130))
+    serif = ROOT / "android" / "app" / "src" / "main" / "assets" / "fonts" / "InstrumentSerif-Regular.ttf"
+    serif_i = ROOT / "android" / "app" / "src" / "main" / "assets" / "fonts" / "InstrumentSerif-Italic.ttf"
+    big = ImageFont.truetype(str(serif), 120)
+    big_i = ImageFont.truetype(str(serif_i), 120)
+    small = ImageFont.truetype(str(FONT), 30)
     d = ImageDraw.Draw(fgraphic)
-    big = ImageFont.truetype(str(FONT), 92)
-    small = ImageFont.truetype(str(FONT), 34)
-    d.text((350, 160), "Split", font=big, fill=(244, 242, 255))
-    split_w = d.textlength("Split", font=big)
-    d.text((350 + split_w, 160), "Mate", font=big, fill=CORAL_A)
-    d.text((354, 290), "Split only what you shared.", font=small, fill=(196, 181, 253))
+    d.text((380, 140), "Split", font=big, fill=FOREST)
+    d.text((380 + d.textlength("Split", font=big), 140), "Mate", font=big_i, fill=FOREST)
+    d.text((386, 300), "Split only what you shared.", font=small, fill=(93, 107, 99))
     fgraphic.convert("RGB").save(STORE / "featureGraphic.png")
     print("icons written")
 

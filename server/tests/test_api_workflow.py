@@ -274,3 +274,16 @@ def test_concurrent_finalize_creates_one_set_of_entries(make_user):
     assert all(s in (200, 409) for s in results) and 200 in results
     with SessionLocal() as db:
         assert db.scalar(select(func.count()).select_from(LedgerEntry)) == 1
+
+
+def test_spending_by_month_counts_my_share_only(make_user):
+    a = make_user("Asha")
+    g, m = setup_group(a, "Bina")
+    me = g["my_member_id"]
+    today = __import__("datetime").date.today().isoformat()
+    a.post(f"/groups/{g['id']}/expenses?finalize=true",
+           expense_body(me, [item("x", "Lunch", 30000, [me, m["Bina"]])], expense_date=today))
+    a.post(f"/groups/{g['id']}/expenses", expense_body(me, [item("y", "Draft", 99900, [me])], expense_date=today))
+    months = a.get("/me/spending?months=6").json()
+    assert len(months["months"]) == 6 and months["currency"] == "INR"
+    assert months["months"][-1]["amount_minor"] == 15000  # half of the lunch; drafts never count
