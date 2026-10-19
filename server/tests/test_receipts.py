@@ -157,3 +157,26 @@ def test_photo_is_deleted_once_the_bill_is_final(client, make_user):
                        files={"file": ("r.png", png_bytes(), "image/png")}).json()["id"]
     assert a.post(f"/groups/{g['id']}/expenses?finalize=true", dict(body, receipt_id=rid2)).status_code == 201
     assert a.get(f"/receipts/{rid2}/url").status_code == 404
+
+
+def test_real_restaurant_bill_from_phone_ocr():
+    """Lines exactly as ML Kit read a real photographed bill (qty/unit columns, two-line
+    names, HSN rows, 'C GST 2.58' with % read as 8, rupee sign read as 7)."""
+    import json
+    from pathlib import Path
+
+    raw = json.loads((Path(__file__).parent / "fixtures" / "ocr_royal_cuisine.json").read_text(encoding="utf-8"))
+    r = parse_receipt([OcrLine(**d) for d in raw])
+    got = [(i.name, i.quantity_milli // 1000, i.unit_price_minor, i.amount_minor) for i in r.items]
+    assert got == [
+        ("PANE ER MASAILA DOSA", 4, 17000, 68000),
+        ("PANEER TIKKA BIRYANI", 1, 39900, 39900),
+        ("STUEEED PARATHA", 2, 9000, 18000),
+        ("HONE Y CHII.IY POTATO", 1, 24900, 24900),
+        ("CLEAR MINERAL VIATER", 2, 3000, 6000),
+    ]
+    assert r.subtotal_minor == 156800 and sum(i.amount_minor for i in r.items) == 156800
+    assert [(d.amount_minor, d.rate_bp) for d in r.discounts] == [(15080, 1000)]
+    assert [(t.component, t.rate_bp, t.amount_minor) for t in r.taxes] == [("CGST", 250, 3536), ("SGST", 250, 3536)]
+    assert r.round_off_minor == -6 and r.total_minor == 148500 and r.date == "2026-10-16"
+    assert r.warnings == []

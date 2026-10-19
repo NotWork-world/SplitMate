@@ -94,11 +94,12 @@ def remove_push_token(body: PushTokenIn, user: User = Depends(current_user), db:
 def my_people(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Everyone on SplitMate you share a group with: the quick list when splitting a bill."""
     my_groups = select(GroupMember.group_id).where(GroupMember.user_id == user.id, GroupMember.status == "active")
+    # De-duplicate on ids only: PostgreSQL can't compare the users' JSON column for DISTINCT.
+    ids = select(GroupMember.user_id).where(
+        GroupMember.group_id.in_(my_groups), GroupMember.status == "active", GroupMember.user_id != user.id
+    )
     rows = db.scalars(
-        select(User).join(GroupMember, GroupMember.user_id == User.id).where(
-            GroupMember.group_id.in_(my_groups), GroupMember.status == "active",
-            User.id != user.id, User.deleted_at.is_(None), User.username.is_not(None),
-        ).distinct()
+        select(User).where(User.id.in_(ids), User.deleted_at.is_(None), User.username.is_not(None))
     ).all()
     return sorted(
         (PublicUserOut(username=u.username, display_name=u.display_name, avatar_hue=u.avatar_hue) for u in rows),

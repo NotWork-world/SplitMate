@@ -80,13 +80,22 @@ DATE_RES = [
     (re.compile(r"\b(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})\b"), "ymd"),
     (re.compile(r"\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2})\b"), "dmy2"),
 ]
-TOTAL_WORDS = re.compile(r"\b(grand\s*total|net\s*(amount|payable|total)|total\s*(amount|payable|due)|amount\s*payable|bill\s*amount|total)\b", re.I)
-SUBTOTAL_WORDS = re.compile(r"\b(sub\s*-?\s*total|item\s*total|gross\s*(amount|total))\b", re.I)
-SKIP_WORDS = re.compile(
-    r"\b(gstin|fssai|invoice|bill\s*no|table|cashier|server|steward|phone|ph\.?|tel|mobile|thank|visit|cover|pax|kot|order\s*no|hsn|sac|cin|pan)\b",
+TOTAL_WORDS = re.compile(
+    r"\b(grand\s*total|net\s*(amount|payable|total)|total\s*(amount|payable|due)|amount\s*payable|payable\s*(amount|amt)|bill\s*amount|total)\b",
     re.I,
 )
-TAX_RE = re.compile(r"\b(cgst|sgst|utgst|igst|gst|vat)\b", re.I)
+SUBTOTAL_WORDS = re.compile(r"\b(sub\s*-?\s*total|item\s*total|gross\s*(amount|total))\b|^\s*(total\s*)?items?\s*:", re.I)
+SKIP_WORDS = re.compile(
+    r"\b(gstin|fssai|invoice|bill\s*(no|#)|table|cashier|server|steward|user|phone|ph\.?|tel|mob|mobile|thank|visit|cover|pax|kot|order\s*no|hsn|sac|cin|pan|qty)\b|^\W*bill\s*:",
+    re.I,
+)
+# "C GST", "S GST" (OCR splits the letter off) are CGST and SGST.
+TAX_RE = re.compile(r"\b(c\s?gst|s\s?gst|ut\s?gst|i\s?gst|gst|vat)\b", re.I)
+# Printed quantity units after the quantity column ("PANEER DOSA  4  POR  680.00").
+UNIT_WORDS = re.compile(r"(?:\s+(?:por|pors|pcs|pc|nos|no|plt|plate|btl|bottle|kg|kgs|gm|gms|ml|ltr|unit|units|each|ea))\.?\s*$", re.I)
+# GST rates in use (and their CGST/SGST halves), to read "2.58" where OCR took % for an 8.
+GST_RATES_BP = {10, 25, 50, 75, 125, 150, 250, 300, 500, 600, 900, 1200, 1400, 1800, 2800}
+GENERIC_MERCHANT = re.compile(r"^\W*(restaurant|hotel|cafe|dhaba|bar|tax\s*invoice|invoice|bill|receipt|estimate|welcome)\W*$", re.I)
 CHARGE_WORDS = {
     "service": re.compile(r"service\s*(charge|chg|tax)?", re.I),
     "packaging": re.compile(r"pack(ag)?ing|packing|container", re.I),
@@ -141,6 +150,22 @@ def rows_from_lines(lines: list[OcrLine]) -> list[str]:
     return ["  ".join(p.text.strip() for p in sorted(r, key=lambda x: x.left)).strip() for r in rows]
 
 
+def _tax_rate_bp(label: str) -> int | None:
+    """Rate on a tax line; also reads "2.58" / "98" as 2.5% / 9% when OCR took the % sign for an 8."""
+    bp = _pct_bp(label)
+    if bp is not None:
+        return bp
+    for num in re.findall(r"(?<![\d.])(\d{1,2}(?:\.\d{1,2})?)(?![\d.])", label):
+        if num.endswith("8") and len(num) > 1:
+            core = num[:-1].rstrip(".")
+            whole, _, frac = core.partition(".")
+            if whole:
+                cand = int(whole) * 100 + int((frac + "00")[:2])
+                if cand in GST_RATES_BP:
+                    return cand
+    return None
+
+
 def _parse_date(text: str) -> str | None:
     for rx, kind in DATE_RES:
         m = rx.search(text)
@@ -168,6 +193,14 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
     rows = rows_from_lines(lines)
     out = ParsedReceipt(currency=cur.code)
     seen_total = False
+    prev_was_item = False  # a words-only row right after an item continues its name
+    pending_total = False  # "Payable Amt." printed above its amount
+    tax_total: tuple[int, int | None, str] | None = None  # "Total GST(5%) 70.72"
+
+    # When the receipt prints paise ("680.00"), a price without them is a bill/table/phone number.
+    amounts = [m.group(1) for r in rows if (m := AMOUNT_RE.search(r))]
+    decimals = sum(1 for a in amounts if "." in a)
+    need_decimal = exp > 0 and decimals >= 3 and decimals >= 0.6 * len(amounts)
 
     for idx, row in enumerate(rows):
         low = row.lower()
@@ -176,57 +209,117 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
             # Date/time rows carry no money; never let "21:40" become a price.
             out.date = out.date or row_date
             out.unparsed_lines.append(row)
+            prev_was_item = False
             continue
-        if out.merchant is None and idx < 4 and re.search(r"[a-zA-Z]{3,}", row) and not re.search(r"\d{3,}", row) and not SKIP_WORDS.search(row):
+        if (
+            out.merchant is None and idx < 4 and re.search(r"[a-zA-Z]{3,}", row)
+            and not re.search(r"\d{3,}|\d\.\d", row) and not SKIP_WORDS.search(row) and not TAX_RE.search(row)
+            and not GENERIC_MERCHANT.match(row)
+        ):
             out.merchant = row.strip()[:80]
             continue
 
         m = AMOUNT_RE.search(row)
         amount = to_minor(m.group(1), exp) if m else None
         label = row[: m.start()].strip(" :.-") if m else row
+        # OCR splits words ("NET T OTAL", "DisCOunt"): match keywords on the label without spaces too.
+        squashed = re.sub(r"\s+", "", label.lower())
 
         if amount is None:
+            if TOTAL_WORDS.search(low) or TOTAL_WORDS.search(squashed):
+                pending_total = True
+            elif prev_was_item and out.items and _is_name_part(row):
+                out.items[-1].name = f"{out.items[-1].name} {row.strip()}"[:120]
+                continue
             if row.strip():
                 out.unparsed_lines.append(row)
+            if not SKIP_WORDS.search(low):  # an HSN code line doesn't end the dish
+                prev_was_item = False
             continue
+        prev_was_item = False
 
-        if TAX_RE.search(low) and not TOTAL_WORDS.search(low.replace("gst", "")):
-            comp = TAX_RE.search(low).group(1).upper()
+        if pending_total and not re.search(r"[a-zA-Z]", label):
+            out.total_minor = _final_total(m.group(1), amount, out.total_minor, exp, prefer=True)
+            pending_total = False
+            seen_total = True
+            continue
+        pending_total = False
+
+        tax = TAX_RE.search(low)
+        if tax and "total" in squashed:
+            tax_total = (abs(amount), _tax_rate_bp(label), row)  # used only if no CGST/SGST lines follow
+            continue
+        if tax:
+            comp = re.sub(r"\s", "", tax.group(1)).upper()
             comp = {"UTGST": "SGST", "VAT": "GST"}.get(comp, comp)
             # "CGST @ 2.5% on 600.00   15.00": the last number is the tax amount.
-            out.taxes.append(ParsedTax(comp, _pct_bp(row), abs(amount), row))
+            out.taxes.append(ParsedTax(comp, _tax_rate_bp(label), abs(amount), row))
             continue
         if ROUND_WORDS.search(low):
             out.round_off_minor = amount
             continue
-        if SUBTOTAL_WORDS.search(low):
+        if SUBTOTAL_WORDS.search(low) or SUBTOTAL_WORDS.search(squashed):
             out.subtotal_minor = amount
             continue
-        if TOTAL_WORDS.search(low):
-            # Prefer the largest/last "total"-like line (grand total comes after total).
-            if out.total_minor is None or amount >= out.total_minor or "grand" in low or "payable" in low:
-                out.total_minor = amount
+        if "after" in squashed:
+            continue  # "After Discount 1417.20": the taxable value, not money of its own
+        if TOTAL_WORDS.search(low) or TOTAL_WORDS.search(squashed):
+            out.total_minor = _final_total(m.group(1), amount, out.total_minor, exp, prefer="grand" in low or "payable" in low)
             seen_total = True
             continue
-        if DISCOUNT_WORDS.search(low):
+        if DISCOUNT_WORDS.search(low) or "discount" in squashed:
             out.discounts.append(ParsedAmount(label or "Discount", abs(amount), row, _pct_bp(row)))
             continue
         charge = next((k for k, rx in CHARGE_WORDS.items() if rx.search(low)), None)
         if charge:
             out.charges.append(ParsedAmount(charge, amount, row, _pct_bp(row)))
             continue
-        if seen_total or SKIP_WORDS.search(low) or not re.search(r"[a-zA-Z]{2,}", label):
+        if (
+            seen_total
+            or SKIP_WORDS.search(low)
+            or not re.search(r"[a-zA-Z]{2,}", label)
+            or (need_decimal and "." not in m.group(1))
+            or re.search(r"\d{7,}", row.replace(" ", ""))  # phone and bill numbers
+        ):
             out.unparsed_lines.append(row)
             continue
 
         out.items.append(_item_from_row(label, amount, row, exp))
+        prev_was_item = True
 
+    if tax_total and not out.taxes:
+        out.taxes.append(ParsedTax("GST", tax_total[1], tax_total[0], tax_total[2]))
+    # One half misread: CGST and SGST always share a rate.
+    rates = {t.component: t.rate_bp for t in out.taxes if t.rate_bp}
+    for t in out.taxes:
+        if t.rate_bp is None and t.component in ("CGST", "SGST"):
+            t.rate_bp = rates.get("SGST" if t.component == "CGST" else "CGST")
     _check(out)
     return out
 
 
+def _is_name_part(row: str) -> bool:
+    """A second line of a dish name: words only, no codes or numbers ("BIRYANI", "POTATO")."""
+    t = row.strip()
+    return bool(re.fullmatch(r"[A-Za-z][A-Za-z .&'/-]{1,40}", t)) and not SKIP_WORDS.search(t) and not TAX_RE.search(t)
+
+
+def _final_total(text: str, amount: int, current: int | None, exp: int, prefer: bool = False) -> int:
+    """The bill total; repairs "71485.00" where OCR read the rupee sign as a 7."""
+    digits = text.strip().lstrip("₹").strip()
+    if current and digits.startswith("7") and amount > 5 * current:
+        fixed = to_minor(digits[1:], exp)
+        if fixed is not None and abs(fixed - current) <= 100 * 10**exp:
+            amount = fixed
+    if current is None or prefer or amount >= current:
+        return amount
+    return current
+
+
 def _item_from_row(label: str, amount: int, row: str, exp: int) -> ParsedItem:
     """name [qty] [rate] amount: trust quantity and rate only when they agree with the amount."""
+    with_unit = UNIT_WORDS.search(label) is not None
+    label = UNIT_WORDS.sub("", label)
     name = re.sub(r"(?:\s+[x×]?\s*\d[\d,]*(?:\.\d{1,2})?)+\s*$", "", label).strip(" :.-x×") or label
     nums = re.findall(r"\d[\d,]*(?:\.\d{1,2})?", label[len(name):])
     qty_milli, unit, confidence = 1000, amount, 70
@@ -244,7 +337,9 @@ def _item_from_row(label: str, amount: int, row: str, exp: int) -> ParsedItem:
         q = small_int(nums[0])
         rate = to_minor(nums[0], exp)
         if q and q > 1 and amount % q == 0:
-            qty_milli, unit, confidence = q * 1000, amount // q, 75
+            qty_milli, unit, confidence = q * 1000, amount // q, 90 if with_unit else 75
+        elif q == 1 and with_unit:
+            confidence = 90  # "PANEER TIKKA  1  POR  399.00": a quantity column
         elif rate == amount:
             confidence = 90  # "Lassi  80.00  80.00": rate equals amount, quantity 1
     if not re.search(r"[a-zA-Z]{3,}", name):

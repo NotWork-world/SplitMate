@@ -67,8 +67,15 @@ export function ReceiptScanScreen({route, navigation}: AppScreen<'ReceiptScan'>)
     setAsset(a);
     setStage('reading');
     setFailure(null);
+    let result: Awaited<ReturnType<typeof TextRecognition.recognize>>;
     try {
-      const result = await TextRecognition.recognize(a.uri!);
+      result = await TextRecognition.recognize(a.uri!);
+    } catch {
+      setFailure("This photo couldn't be read on this phone. Try another photo, or add the items by hand.");
+      setStage('failed');
+      return;
+    }
+    try {
       const lines = result.blocks.flatMap(b =>
         b.lines.map(l => ({
           text: l.text,
@@ -83,14 +90,20 @@ export function ReceiptScanScreen({route, navigation}: AppScreen<'ReceiptScan'>)
         setStage('failed');
         return;
       }
-      const p = await api.post<Parsed>('/receipts/parse', {lines: lines.slice(0, 600), currency, provider: 'mlkit-on-device'});
+      const body = {lines: lines.slice(0, 600), currency, provider: 'mlkit-on-device'};
+      // The free server can answer with an error page while it wakes up: try once more.
+      const p = await api.post<Parsed>('/receipts/parse', body).catch(() => api.post<Parsed>('/receipts/parse', body));
       setParsed(p);
       setSelected(p.items.map(() => true));
       const comps = new Set(p.taxes.map(t => t.component));
       setUseTaxes(p.taxes.length > 0 && p.taxes.every(t => t.rate_bp) && comps.has('CGST') === comps.has('SGST'));
       setStage('review');
     } catch (e) {
-      setFailure(e instanceof ApiError ? e.message : "The receipt couldn't be read on this phone. You can still add the items by hand.");
+      setFailure(
+        e instanceof ApiError
+          ? e.message
+          : "The bill was read, but SplitMate's server didn't answer properly. Wait a few seconds and try again.",
+      );
       setStage('failed');
     }
   };

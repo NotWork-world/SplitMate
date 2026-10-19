@@ -6,6 +6,7 @@ import BarcodeScanning from '@react-native-ml-kit/barcode-scanning';
 import QRCode from 'react-native-qrcode-svg';
 import {parseUpiQr, qrMatches, upiPayUrl} from '../../payments/upi';
 import {usernameError} from '../../people/invite';
+import {pushAvailable} from '../../push/push';
 import {
   errorMessage,
   useChangePasswordMutation,
@@ -316,7 +317,9 @@ export function SettingsScreen() {
         <SwitchRow title="Groups" subtitle="People joining or leaving" value={pref('notify_groups')} onChange={v => setPref('notify_groups', v)} />
       </Card>
       <Text variant="caption" tone="faint" style={{marginTop: space.xs}}>
-        Push notifications aren't set up in this version; you'll see these in the bell on the home screen.
+        {pushAvailable()
+          ? 'These also arrive on your phone. Turn them off for SplitMate in Android settings if you only want them in the bell.'
+          : 'These show in the bell on the home screen.'}
       </Text>
 
       <SectionTitle title="Appearance" />

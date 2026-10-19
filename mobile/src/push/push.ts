@@ -18,6 +18,11 @@ import {api} from '../api/client';
 let registered: string | null = null;
 let stopRefresh: (() => void) | null = null;
 
+/** True when this build can receive phone notifications (it was built with google-services.json). */
+export function pushAvailable() {
+  return available();
+}
+
 function available() {
   try {
     return getApps().length > 0;
