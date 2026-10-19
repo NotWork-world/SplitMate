@@ -16,6 +16,9 @@ import {formatDate} from '../common/rows';
 import {BillBreakdown, PeopleShares} from './Breakdown';
 import {canFinalize, draftActions, preview} from './draft';
 
+// Screens that make up "adding a bill"; all of them close once it's saved.
+const FLOW_SCREENS = new Set(['StartExpense', 'ExpenseEditor', 'ReceiptScan', 'ClaimDishes', 'BillReview']);
+
 export function BillReviewScreen({route, navigation}: AppScreen<'BillReview'>) {
   const {localId} = route.params;
   const dispatch = useAppDispatch();
@@ -52,8 +55,18 @@ export function BillReviewScreen({route, navigation}: AppScreen<'BillReview'>) {
     haptics.success();
     dispatch(draftActions.remove(localId));
     toast(final ? 'Expense added · balances updated' : 'Draft saved', 'positive');
-    navigation.popToTop();
-    navigation.navigate('ExpenseDetail', {expenseId: e.id});
+    // Close only the bill-making screens, so Back from the bill returns to where you started
+    // (the group, Home, or the bill you were editing), not always to Home.
+    const state = navigation.getState();
+    const firstFlow = state.routes.findIndex(rt => FLOW_SCREENS.has(rt.name));
+    const kept = state.routes.slice(0, firstFlow < 0 ? state.routes.length : firstFlow);
+    const last = kept[kept.length - 1];
+    const sameBill = last?.name === 'ExpenseDetail' && (last.params as {expenseId?: string} | undefined)?.expenseId === e.id;
+    navigation.reset({
+      ...state,
+      index: sameBill ? kept.length - 1 : kept.length,
+      routes: sameBill ? kept : [...kept, {key: `ExpenseDetail-${e.id}-${Date.now()}`, name: 'ExpenseDetail', params: {expenseId: e.id}}],
+    } as typeof state);
   };
 
   const fail = (e: unknown) => {

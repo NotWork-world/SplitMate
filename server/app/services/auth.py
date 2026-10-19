@@ -133,13 +133,27 @@ def refresh(db: Session, raw: str) -> TokenOut:
     if row is None:
         raise ApiError(401, "invalid_refresh", "Your session has expired. Please sign in again.")
     expires = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
-    if row.used_at is not None or row.revoked_at is not None:
-        # A rotated token was presented again: assume theft and end the whole session family.
-        db.execute(
-            update(RefreshToken).where(RefreshToken.family_id == row.family_id).values(revoked_at=now)
-        )
-        db.commit()
+    if row.revoked_at is not None:
         raise ApiError(401, "invalid_refresh", "Your session has expired. Please sign in again.")
+    if row.used_at is not None:
+        # A rotated token came back. A family is a chain, so later tokens are its descendants.
+        later = db.scalars(
+            select(RefreshToken).where(
+                RefreshToken.family_id == row.family_id, RefreshToken.created_at > row.created_at
+            ).with_for_update()
+        ).all()
+        if any(t.used_at is not None for t in later):
+            # Its replacement was already used: two holders of one session, so assume theft.
+            db.execute(
+                update(RefreshToken).where(RefreshToken.family_id == row.family_id).values(revoked_at=now)
+            )
+            db.commit()
+            raise ApiError(401, "invalid_refresh", "Your session has expired. Please sign in again.")
+        # The replacement was never used: the phone didn't receive it (slow network, server
+        # waking up, app closed mid-request). Retire it and hand out a fresh one instead of
+        # signing the person out.
+        for t in later:
+            t.revoked_at = now
     if expires < now:
         raise ApiError(401, "invalid_refresh", "Your session has expired. Please sign in again.")
     user = db.get(User, row.user_id)

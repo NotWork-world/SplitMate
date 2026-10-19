@@ -50,6 +50,12 @@ export function parseUpiQr(text: string): {upiId: string; name: string | null} |
   return {upiId, name: params.pn?.trim() || null};
 }
 
+/** True when a stored QR pays this UPI ID (so editing the ID never leaves a QR that pays someone else). */
+export function qrMatches(qr: string, upiId: string): boolean {
+  const p = parseUpiQr(qr);
+  return !!p && p.upiId.toLowerCase() === upiId.trim().toLowerCase();
+}
+
 /** Which of the listed apps are installed (the generic chooser counts if any UPI app is). */
 export async function installedUpiApps(): Promise<Set<UpiAppKey>> {
   const found = new Set<UpiAppKey>();

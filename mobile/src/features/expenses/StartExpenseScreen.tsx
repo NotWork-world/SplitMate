@@ -1,18 +1,22 @@
-import React, {useEffect, useMemo} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
+import {UserPlus} from 'lucide-react-native';
 import {useGroupsQuery} from '../../api/endpoints';
 import type {Group} from '../../api/types';
-import {Card, EmptyState, GROUP_TYPE_META, Header, ListRow, Screen, SectionTitle, Text, space} from '../../design';
+import {Button, Card, EmptyState, GROUP_TYPE_META, Header, ListRow, Screen, SectionTitle, Text, space} from '../../design';
 import type {AppScreen} from '../../navigation/types';
 import {useAppDispatch, useAppSelector} from '../../store';
 import {QueryView} from '../common/QueryView';
 import {formatMoney} from '../../money/currency';
 import {createDraft, draftActions, emptyPayload} from './draft';
+import {PeoplePickerSheet} from './PeoplePickerSheet';
 
 export function StartExpenseScreen({route, navigation}: AppScreen<'StartExpense'>) {
   const {groupId, mode = 'itemized'} = route.params ?? {};
   const dispatch = useAppDispatch();
   const groups = useGroupsQuery({includePersonal: true});
   const draftsById = useAppSelector(s => s.drafts.byId);
+  const currency = useAppSelector(s => s.auth.user?.default_currency ?? 'INR');
+  const [picking, setPicking] = useState(false);
   const localDrafts = useMemo(
     () => Object.values(draftsById).filter(d => !d.serverId).sort((a, b) => b.updatedAt - a.updatedAt),
     [draftsById],
@@ -33,7 +37,20 @@ export function StartExpenseScreen({route, navigation}: AppScreen<'StartExpense'
   }, [groupId, groups.data]);
 
   return (
-    <Screen header={<Header title={mode === 'itemized' ? 'Split a bill' : 'Add an expense'} subtitle="Which group is it for?" />}>
+    <Screen header={<Header title={mode === 'itemized' ? 'Split a bill' : 'Add an expense'} subtitle="Who is it with?" />}>
+      <Button label="Choose people" icon={UserPlus} variant="food" size="lg" onPress={() => setPicking(true)} style={{marginTop: space.sm}} testID="start-choose-people" />
+      <Text variant="caption" tone="faint" style={{marginTop: space.xs}}>
+        No group needed: pick friends and split. Or use one of your groups below.
+      </Text>
+      <PeoplePickerSheet
+        visible={picking}
+        onClose={() => setPicking(false)}
+        currency={currency}
+        onReady={g => {
+          setPicking(false);
+          start(g);
+        }}
+      />
       {localDrafts.length ? (
         <>
           <SectionTitle title="Continue where you left off" />
@@ -49,7 +66,7 @@ export function StartExpenseScreen({route, navigation}: AppScreen<'StartExpense'
           </Card>
         </>
       ) : null}
-      <SectionTitle title="Groups" />
+      <SectionTitle title="Or pick a group" />
       <QueryView query={groups}>
         {list => {
           const usable = list.filter(g => !g.archived);

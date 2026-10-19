@@ -7,6 +7,7 @@ export interface User {
   username: string | null;
   avatar_hue: number;
   upi_id: string | null;
+  upi_qr?: string | null;
   default_currency: string;
   preferences: Record<string, boolean>;
   has_password: boolean;
@@ -32,6 +33,7 @@ export interface Member {
   avatar_hue: number;
   upi_id?: string | null;
   username?: string | null;
+  upi_qr?: string | null;
 }
 
 export interface PublicUser {

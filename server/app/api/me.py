@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
+from urllib.parse import unquote
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
@@ -19,6 +21,7 @@ from ..models import (
     Group,
     GroupMember,
     Notification,
+    PushToken,
     Repayment,
     User,
     utcnow,
@@ -65,6 +68,44 @@ def find_by_username(username: str, user: User = Depends(current_user), db: Sess
     return PublicUserOut(username=found.username, display_name=found.display_name, avatar_hue=found.avatar_hue)
 
 
+class PushTokenIn(BaseModel):
+    token: str = Field(min_length=10, max_length=512)
+    platform: str = Field(default="android", pattern="^(android|ios)$")
+
+
+@router.post("/me/push-token", status_code=204)
+def save_push_token(body: PushTokenIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Register this phone for notifications (a token moves to whoever signed in last)."""
+    row = db.scalar(select(PushToken).where(PushToken.token == body.token))
+    if row is None:
+        db.add(PushToken(user_id=user.id, token=body.token, platform=body.platform))
+    else:
+        row.user_id = user.id
+    db.commit()
+
+
+@router.post("/me/push-token/remove", status_code=204)
+def remove_push_token(body: PushTokenIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    db.execute(delete(PushToken).where(PushToken.token == body.token, PushToken.user_id == user.id))
+    db.commit()
+
+
+@router.get("/me/people", response_model=list[PublicUserOut])
+def my_people(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Everyone on SplitMate you share a group with: the quick list when splitting a bill."""
+    my_groups = select(GroupMember.group_id).where(GroupMember.user_id == user.id, GroupMember.status == "active")
+    rows = db.scalars(
+        select(User).join(GroupMember, GroupMember.user_id == User.id).where(
+            GroupMember.group_id.in_(my_groups), GroupMember.status == "active",
+            User.id != user.id, User.deleted_at.is_(None), User.username.is_not(None),
+        ).distinct()
+    ).all()
+    return sorted(
+        (PublicUserOut(username=u.username, display_name=u.display_name, avatar_hue=u.avatar_hue) for u in rows),
+        key=lambda p: p.display_name.lower(),
+    )
+
+
 @router.patch("/me", response_model=UserOut)
 def update_me(body: ProfileUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)):
     if body.username is not None:
@@ -80,6 +121,10 @@ def update_me(body: ProfileUpdate, user: User = Depends(current_user), db: Sessi
         db.execute(update(GroupMember).where(GroupMember.user_id == user.id).values(display_name=body.display_name))
     if body.upi_id is not None:
         user.upi_id = body.upi_id or None
+    if body.upi_qr is not None:
+        user.upi_qr = body.upi_qr or None
+    if user.upi_qr and (not user.upi_id or f"pa={user.upi_id}".lower() not in unquote(user.upi_qr).lower()):
+        user.upi_qr = None  # a QR for a different UPI ID than the one shown would send money elsewhere
     if body.default_currency is not None:
         if body.default_currency.upper() not in SUPPORTED_CURRENCIES:
             raise invalid("unknown_currency", "That currency isn't supported.")
@@ -332,6 +377,7 @@ def delete_account(body: DeleteAccountIn, user: User = Depends(current_user), db
     user.google_sub = None
     user.password_hash = None
     user.upi_id = None
+    user.upi_qr = None
     user.username = None
     user.display_name = "Deleted user"
     user.preferences = {}

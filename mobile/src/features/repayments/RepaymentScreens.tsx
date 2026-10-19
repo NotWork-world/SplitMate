@@ -86,6 +86,7 @@ export function RepaymentDetailScreen({route}: AppScreen<'RepaymentDetail'>) {
                       visible={upiSheet}
                       onClose={() => setUpiSheet(false)}
                       upiId={r.creditor.upi_id}
+                      qr={r.creditor.upi_qr}
                       name={r.creditor.display_name}
                       note={`SplitMate ${r.group_name}`}
                       amount={toInputText(r.amount_minor, r.currency)}

@@ -15,12 +15,21 @@ def test_register_login_refresh_logout(client):
     assert client.post("/api/auth/login", json={"email": "nobody@example.com", "password": "wrong-pass"}).json()["error"]["message"] == "Email or password is incorrect."
     tokens = client.post("/api/auth/login", json={"email": "asha@example.com", "password": "correct-horse-9"}).json()
 
-    # Rotation: the new refresh token works, the old one is now dead.
-    new = client.post("/api/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
-    assert new.status_code == 200
-    # Reusing the rotated token revokes the whole family (theft detection).
-    assert client.post("/api/auth/refresh", json={"refresh_token": tokens["refresh_token"]}).status_code == 401
-    assert client.post("/api/auth/refresh", json={"refresh_token": new.json()["refresh_token"]}).status_code == 401
+    old = tokens["refresh_token"]
+    # Rotation: the old token is exchanged for a new one.
+    lost = client.post("/api/auth/refresh", json={"refresh_token": old})
+    assert lost.status_code == 200
+    # The reply never reached the phone, so it presents the old token again: it is NOT signed
+    # out; it gets a fresh token and the undelivered one stops working.
+    again = client.post("/api/auth/refresh", json={"refresh_token": old})
+    assert again.status_code == 200
+    assert client.post("/api/auth/refresh", json={"refresh_token": lost.json()["refresh_token"]}).status_code == 401
+    # The phone uses its new token normally...
+    newer = client.post("/api/auth/refresh", json={"refresh_token": again.json()["refresh_token"]})
+    assert newer.status_code == 200
+    # ...so the old token showing up now means two holders: the whole session is ended (theft).
+    assert client.post("/api/auth/refresh", json={"refresh_token": old}).status_code == 401
+    assert client.post("/api/auth/refresh", json={"refresh_token": newer.json()["refresh_token"]}).status_code == 401
 
     t2 = client.post("/api/auth/login", json={"email": "asha@example.com", "password": "correct-horse-9"}).json()
     assert client.post("/api/auth/logout", json={"refresh_token": t2["refresh_token"]}).status_code == 204

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     auth_rate_limit_per_minute: int = 10
     cors_origins: str = ""
     public_base_url: str = "http://localhost:8000"
+    # Phone notifications (Firebase Cloud Messaging): the service-account JSON, as is or base64.
+    # Empty = notifications stay in the app only.
+    firebase_credentials: str = ""
 
     @field_validator("database_url")
     @classmethod

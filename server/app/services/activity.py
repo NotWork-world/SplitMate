@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..integrations import push
 from ..models import ActivityEvent, AuditEvent, GroupMember, Notification, User
 
 # Which preference switch controls which activity type (all default to on).
@@ -70,6 +71,7 @@ def record(
             if user is None or user.deleted_at or (user.preferences or {}).get(pref) is False:
                 continue
         db.add(Notification(user_id=user_id, activity_id=event.id))
+        push.queue(db, user_id, event.id)
     return event
 
 

@@ -12,6 +12,10 @@ os.environ["SPLITMATE_ENV"] = "test"
 os.environ["SPLITMATE_STORAGE_DIR"] = str(_tmp / "storage")
 os.environ["SPLITMATE_AUTH_RATE_LIMIT_PER_MINUTE"] = "0"
 os.environ["SPLITMATE_RATE_LIMIT_PER_MINUTE"] = "0"
+# Real environment variables beat server/.env, so a developer's local .env can't leak into tests.
+os.environ["SPLITMATE_GOOGLE_CLIENT_IDS"] = ""
+os.environ["SPLITMATE_STORAGE_BACKEND"] = "local"
+os.environ["SPLITMATE_PUBLIC_BASE_URL"] = "http://testserver"
 
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402

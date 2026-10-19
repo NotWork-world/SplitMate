@@ -85,3 +85,7 @@ jest.mock('@react-native-google-signin/google-signin', () => ({
   },
   statusCodes: {},
 }));
+
+// Firebase isn't configured in tests: behave like a build without google-services.json.
+jest.mock('@react-native-firebase/app', () => ({getApps: () => []}));
+jest.mock('@react-native-firebase/messaging', () => ({}));

@@ -6,6 +6,7 @@ import {createBottomTabNavigator, type BottomTabBarProps} from '@react-navigatio
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Activity, Home, Plus, User, Users} from 'lucide-react-native';
 import {Gradient, Text, haptics, useTheme} from '../design';
+import {initialNotificationLink, onNotificationTap} from '../push/push';
 import {useAppSelector} from '../store';
 import {OnboardingScreen} from '../features/auth/Onboarding';
 import {SignInScreen, SignUpScreen} from '../features/auth/AuthForms';
@@ -111,7 +112,16 @@ const linking: LinkingOptions<AppParams> = {
   getInitialURL: async () => {
     const u = pendingInvite;
     pendingInvite = null;
-    return u ?? Linking.getInitialURL();
+    return u ?? (await initialNotificationLink()) ?? Linking.getInitialURL();
+  },
+  // App links, plus tapped phone notifications (they open the bill or payment they're about).
+  subscribe: listener => {
+    const links = Linking.addEventListener('url', ({url}) => listener(url));
+    const taps = onNotificationTap(listener);
+    return () => {
+      links.remove();
+      taps();
+    };
   },
 };
 

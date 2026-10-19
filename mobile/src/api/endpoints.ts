@@ -56,7 +56,7 @@ export const splitApi = createApi({
   endpoints: b => ({
     health: b.query<Health, void>({query: () => '/health'}),
     me: b.query<User, void>({query: () => '/me', providesTags: ['Me']}),
-    updateMe: b.mutation<User, Partial<Pick<User, 'display_name' | 'username' | 'upi_id' | 'default_currency' | 'avatar_hue'>> & {preferences?: Record<string, boolean>}>({
+    updateMe: b.mutation<User, Partial<Pick<User, 'display_name' | 'username' | 'upi_id' | 'upi_qr' | 'default_currency' | 'avatar_hue'>> & {preferences?: Record<string, boolean>}>({
       query: body => ({url: '/me', method: 'PATCH', body}),
       invalidatesTags: ['Me', 'Groups', 'Summary'],
     }),
@@ -83,6 +83,11 @@ export const splitApi = createApi({
       query: body => ({url: '/groups', method: 'POST', body}),
       invalidatesTags: ['Groups', 'Summary'],
     }),
+    groupWithPeople: b.mutation<Group, {name: string; currency: string; members: Array<{username?: string; display_name?: string}>}>({
+      query: body => ({url: '/groups/with-people', method: 'POST', body: {type: 'friends', ...body}}),
+      invalidatesTags: ['Groups', 'Summary'],
+    }),
+    myPeople: b.query<PublicUser[], void>({query: () => '/me/people', providesTags: ['Groups']}),
     updateGroup: b.mutation<Group, {id: string; body: Record<string, unknown>}>({
       query: ({id, body}) => ({url: `/groups/${id}`, method: 'PATCH', body}),
       invalidatesTags: ['Groups', 'Group', 'Summary'],
@@ -205,6 +210,8 @@ export const {
   useCreateGroupMutation,
   useUpdateGroupMutation,
   useAddMemberMutation,
+  useGroupWithPeopleMutation,
+  useMyPeopleQuery,
   useLazyUserByUsernameQuery,
   useUpdateMemberMutation,
   useRemoveMemberMutation,

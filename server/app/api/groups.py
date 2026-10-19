@@ -82,14 +82,51 @@ def create_group(body: GroupCreate, user: User = Depends(current_user), db: Sess
     db.flush()
     me = GroupMember(group_id=g.id, user_id=user.id, display_name=user.display_name, role="owner")
     db.add(me)
+    seen = {user.id}
     for m in body.members:
-        db.add(GroupMember(group_id=g.id, display_name=m.display_name, contact_email=m.contact_email))
+        if m.username:
+            friend = _user_by_username(db, m.username)
+            if friend.id not in seen:  # yourself or a repeat: skip
+                seen.add(friend.id)
+                db.add(GroupMember(group_id=g.id, user_id=friend.id, display_name=friend.display_name))
+        else:
+            db.add(GroupMember(group_id=g.id, display_name=m.display_name, contact_email=m.contact_email))
     db.flush()
     activity.record(db, actor=user, type="group.created", entity_type="group", entity_id=g.id, group_id=g.id,
                     data={"name": g.name})
     db.commit()
     db.refresh(g)
     return group_out(db, g, me)
+
+
+def _user_by_username(db: Session, username: str) -> User:
+    friend = db.scalar(
+        select(User).where(User.username == auth_svc.normalize_username(username), User.deleted_at.is_(None))
+    )
+    if friend is None:
+        raise ApiError(404, "user_not_found", f"No one on SplitMate has the username @{username.lstrip('@')}.")
+    return friend
+
+
+@router.post("/groups/with-people", response_model=GroupOut, dependencies=[Depends(write_limit)])
+def group_with_people(body: GroupCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Split with chosen people without managing a group: reuse the open group that has
+    exactly you and these SplitMate users, or make one named after them."""
+    if not body.members:
+        raise invalid("no_people", "Choose at least one person to split with.")
+    if all(m.username for m in body.members):
+        wanted = {user.id} | {_user_by_username(db, m.username).id for m in body.members}
+        mine = db.scalars(
+            select(Group).join(GroupMember, GroupMember.group_id == Group.id).where(
+                GroupMember.user_id == user.id, GroupMember.status == "active",
+                Group.type != "personal", Group.archived_at.is_(None), Group.currency == body.currency.upper(),
+            ).order_by(Group.created_at.desc())
+        ).all()
+        for g in mine:
+            active = [m for m in g.members if m.status == "active"]
+            if all(m.user_id for m in active) and {m.user_id for m in active} == wanted:
+                return group_out(db, g, next(m for m in active if m.user_id == user.id))
+    return create_group(body, user, db)
 
 
 @router.get("/groups/{group_id}", response_model=GroupOut)
@@ -138,11 +175,7 @@ def add_member(group_id: uuid.UUID, body: MemberCreate, user: User = Depends(cur
         raise invalid("group_full", "A group can have up to 100 members.")
     if body.username:
         # Someone already on SplitMate: they're in straight away and see the group in their list.
-        friend = db.scalar(
-            select(User).where(User.username == auth_svc.normalize_username(body.username), User.deleted_at.is_(None))
-        )
-        if friend is None:
-            raise ApiError(404, "user_not_found", "No one on SplitMate has that username.")
+        friend = _user_by_username(db, body.username)
         m = db.scalar(select(GroupMember).where(GroupMember.group_id == g.id, GroupMember.user_id == friend.id))
         if m is not None and m.status == "active":
             raise conflict("already_member", f"{m.display_name} is already in this group.")

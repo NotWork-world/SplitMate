@@ -53,6 +53,8 @@ class User(TimestampMixin, Base):
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
     avatar_hue: Mapped[int] = mapped_column(Integer, default=260, nullable=False)
     upi_id: Mapped[str | None] = mapped_column(String(100))
+    # The exact text of the person's own UPI QR (upi://pay?...), so it can be shown unchanged.
+    upi_qr: Mapped[str | None] = mapped_column(String(1000))
     default_currency: Mapped[str] = mapped_column(String(3), default="INR", nullable=False)
     preferences: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -491,3 +493,14 @@ class IdempotencyKey(TimestampMixin, Base):
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     status_code: Mapped[int] = mapped_column(Integer, nullable=False)
     response: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+
+class PushToken(TimestampMixin, Base):
+    """A phone that should get notifications for this person (Firebase Cloud Messaging token)."""
+
+    __tablename__ = "push_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=new_id)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    token: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
+    platform: Mapped[str] = mapped_column(String(16), default="android", nullable=False)

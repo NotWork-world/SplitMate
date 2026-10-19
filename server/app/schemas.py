@@ -63,6 +63,7 @@ class UserOut(Out):
     username: str | None = None
     avatar_hue: int
     upi_id: str | None
+    upi_qr: str | None = None
     default_currency: str
     preferences: dict[str, Any]
     has_password: bool = False
@@ -81,6 +82,7 @@ class TokenOut(BaseModel):
 class ProfileUpdate(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
     username: str | None = Field(default=None, min_length=3, max_length=20)
+    upi_qr: str | None = Field(default=None, max_length=1000, pattern=r"^$|^(?i:upi)://pay\?\S+$")
     upi_id: str | None = Field(default=None, max_length=100, pattern=r"^$|^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,64}$")
     default_currency: str | None = Field(default=None, min_length=3, max_length=3)
     avatar_hue: int | None = Field(default=None, ge=0, le=359)
@@ -163,6 +165,7 @@ class MemberOut(Out):
     is_registered: bool = False
     avatar_hue: int = 260
     upi_id: str | None = None  # only if the person added one to their profile
+    upi_qr: str | None = None
     username: str | None = None
 
 

@@ -115,6 +115,7 @@ export function SettleUpScreen({route, navigation}: AppScreen<'SettleUp'>) {
               visible={upiSheet}
               onClose={() => setUpiSheet(false)}
               upiId={other.upi_id}
+              qr={other.upi_qr}
               name={name}
               note={`SplitMate ${group.data?.name ?? ''}`.trim()}
               amount={toInputText(amount ?? 0, currency)}

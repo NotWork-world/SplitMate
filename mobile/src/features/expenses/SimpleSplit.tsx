@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import {Pressable, View} from 'react-native';
 import {Check} from 'lucide-react-native';
 import type {ExpensePayload, ItemPayload, Member, SplitKind} from '../../api/types';
-import {Avatar, Card, MoneyField, Segmented, Text, TextField, space, useTheme} from '../../design';
+import {Avatar, Card, Chip, MoneyField, Segmented, Text, TextField, space, useTheme} from '../../design';
 import {formatBp, formatMoney, parseBp} from '../../money/currency';
 import type {BillResult} from '../../money/types';
 import {newItem} from './draft';
@@ -133,6 +133,21 @@ export function SimpleSplit({
           {formatMoney(sumValues, cur)} of {formatMoney(item.unit_price_minor, cur)} assigned
           {sumValues !== item.unit_price_minor ? ` · ${formatMoney(Math.abs(item.unit_price_minor - sumValues), cur)} ${sumValues < item.unit_price_minor ? 'left' : 'too much'}` : ' ✓'}
         </Text>
+      ) : null}
+      {mode === 'exact' && sumValues < item.unit_price_minor && item.consumers.some(c => !c.value) ? (
+        <Chip
+          label={`Split the ${formatMoney(item.unit_price_minor - sumValues, cur)} left among the rest`}
+          tone="accent"
+          onPress={() => {
+            // People without an amount share what's left; leftover paise go to the first few.
+            const rest = item.consumers.filter(c => !c.value);
+            const left = item.unit_price_minor - sumValues;
+            const base = Math.floor(left / rest.length);
+            const extra = left - base * rest.length;
+            let i = 0;
+            setItem({consumers: item.consumers.map(c => (c.value ? c : {...c, value: base + (i++ < extra ? 1 : 0)}))});
+          }}
+        />
       ) : null}
       {mode === 'percent' ? (
         <Text variant="small" tone={sumValues === 10000 ? 'positive' : 'warning'}>

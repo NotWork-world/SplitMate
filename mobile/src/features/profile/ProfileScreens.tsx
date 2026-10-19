@@ -4,7 +4,7 @@ import {Bell, Download, FileText, KeyRound, LogOut, QrCode, Server, ShieldCheck,
 import {launchImageLibrary} from 'react-native-image-picker';
 import BarcodeScanning from '@react-native-ml-kit/barcode-scanning';
 import QRCode from 'react-native-qrcode-svg';
-import {parseUpiQr, upiPayUrl} from '../../payments/upi';
+import {parseUpiQr, qrMatches, upiPayUrl} from '../../payments/upi';
 import {usernameError} from '../../people/invite';
 import {
   errorMessage,
@@ -113,6 +113,8 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
   const [name, setName] = useState('');
   const [upi, setUpi] = useState('');
   const [uname, setUname] = useState('');
+  // The exact text of the person's own UPI QR, when they imported it from a picture.
+  const [qr, setQr] = useState<string | null>(null);
   const [currency, setCurrency] = useState('INR');
   const [hue, setHue] = useState(260);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +126,7 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
     if (me.data) {
       setName(me.data.display_name);
       setUpi(me.data.upi_id ?? '');
+      setQr(me.data.upi_qr ?? null);
       setUname(me.data.username ?? '');
       setCurrency(me.data.default_currency);
       setHue(me.data.avatar_hue);
@@ -147,7 +150,7 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
             onPress={async () => {
               setError(null);
               try {
-                const u = await update({display_name: name.trim(), username: uname.trim().replace(/^@/, '').toLowerCase(), upi_id: upi.trim(), default_currency: currency, avatar_hue: hue}).unwrap();
+                const u = await update({display_name: name.trim(), username: uname.trim().replace(/^@/, '').toLowerCase(), upi_id: upi.trim(), upi_qr: qr && qrMatches(qr, upi) ? qr : '', default_currency: currency, avatar_hue: hue}).unwrap();
                 dispatch(userUpdated(u));
                 toast('Profile saved', 'positive');
                 navigation.goBack();
@@ -212,9 +215,11 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
           }
           try {
             const codes = await BarcodeScanning.scan(uri);
-            const found = codes.map(c => parseUpiQr(c.value)).find(Boolean);
-            if (found) {
+            const raw = codes.map(c => c.value).find(v => parseUpiQr(v));
+            const found = raw ? parseUpiQr(raw) : null;
+            if (raw && found) {
               setUpi(found.upiId);
+              setQr(raw.trim());
               toast('UPI ID read from your QR', 'positive');
             } else {
               setError("No UPI QR found in that picture. Try a screenshot of the QR from your UPI app's \"Receive money\" page.");
@@ -229,10 +234,12 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
         <Card style={{alignItems: 'center', marginTop: space.md}}>
           <Text variant="smallStrong">Your payment QR</Text>
           <View style={{padding: space.md, backgroundColor: '#FFFFFF', borderRadius: 12, marginTop: space.sm}}>
-            <QRCode value={upiPayUrl('upi://pay', {upiId: upi.trim(), name: name.trim() || 'SplitMate'})} size={168} color="#1F3B2D" />
+            <QRCode value={qr && qrMatches(qr, upi) ? qr : upiPayUrl('upi://pay', {upiId: upi.trim(), name: name.trim() || 'SplitMate'})} size={168} />
           </View>
           <Text variant="caption" tone="faint" align="center" style={{marginTop: space.sm}}>
-            Friends can scan this with any UPI app to pay you.
+            {qr && qrMatches(qr, upi)
+              ? 'Your own UPI QR, with everything in it kept as is. Friends can scan it with any UPI app.'
+              : 'Made from your UPI ID. To show your bank’s own QR instead, use “Fill from my UPI QR code”.'}
           </Text>
         </Card>
       ) : null}

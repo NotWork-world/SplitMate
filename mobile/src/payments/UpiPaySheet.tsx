@@ -1,12 +1,13 @@
 import React, {useEffect, useState} from 'react';
 import {Linking, Pressable, View} from 'react-native';
 import {ChevronRight} from 'lucide-react-native';
-import {Banner, Chip, Sheet, Text, radius, space, useTheme} from '../design';
+import {Banner, Sheet, Text, radius, space, useTheme} from '../design';
+import QRCode from 'react-native-qrcode-svg';
 import {installedUpiApps, UPI_APPS, upiPayUrl, type UpiAppKey} from './upi';
 
 /**
  * Asks which UPI app to pay with, then opens that app on its pay screen with the
- * payee's UPI ID already filled in. The payer types the amount (or opts in to prefill).
+ * payee's UPI ID and the amount filled in (some UPI apps refuse to let you type it if it's missing).
  * SplitMate can't see the result, so the caller asks them to mark it paid afterwards.
  */
 export function UpiPaySheet({
@@ -17,6 +18,7 @@ export function UpiPaySheet({
   note,
   amount,
   amountLabel,
+  qr,
   onLaunched,
 }: {
   visible: boolean;
@@ -26,12 +28,13 @@ export function UpiPaySheet({
   note?: string;
   amount?: string; // decimal text like "100.00"
   amountLabel?: string; // formatted, like "₹100.00"
+  qr?: string | null; // their own UPI QR text, shown unchanged when they added one
   onLaunched: () => void;
 }) {
   const {colors} = useTheme();
   const [installed, setInstalled] = useState<Set<UpiAppKey> | null>(null);
-  const [prefill, setPrefill] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showQr, setShowQr] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -43,7 +46,7 @@ export function UpiPaySheet({
   const open = async (base: string, label: string) => {
     setError(null);
     try {
-      await Linking.openURL(upiPayUrl(base, {upiId, name, note, amount: prefill ? amount : undefined}));
+      await Linking.openURL(upiPayUrl(base, {upiId, name, note, amount}));
       onLaunched();
       onClose();
     } catch {
@@ -62,15 +65,25 @@ export function UpiPaySheet({
         </Text>
         {amountLabel ? (
           <Text variant="small" tone="muted" style={{marginTop: 4}}>
-            Amount to enter: <Text variant="smallStrong">{amountLabel}</Text>
+            Amount: <Text variant="smallStrong">{amountLabel}</Text>
           </Text>
         ) : null}
+        <Pressable accessibilityRole="button" onPress={() => setShowQr(s => !s)} style={{marginTop: space.sm}} testID="upi-show-qr">
+          <Text variant="smallStrong" tone="accent">
+            {showQr ? 'Hide QR code' : `Show ${name}'s QR code`}
+          </Text>
+        </Pressable>
+        {showQr ? (
+          <View style={{alignItems: 'center', marginTop: space.sm}}>
+            <View style={{padding: space.md, backgroundColor: '#FFFFFF', borderRadius: radius.md}}>
+              <QRCode value={qr || upiPayUrl('upi://pay', {upiId, name, note, amount})} size={180} />
+            </View>
+            <Text variant="caption" tone="faint" align="center" style={{marginTop: space.xs}}>
+              {qr ? `${name}'s own UPI QR. Scan it from another phone.` : 'Scan from another phone to pay.'}
+            </Text>
+          </View>
+        ) : null}
       </View>
-      {amount ? (
-        <View style={{flexDirection: 'row', marginTop: space.sm}}>
-          <Chip label={`Fill in ${amountLabel ?? amount} for me`} selected={prefill} onPress={() => setPrefill(p => !p)} />
-        </View>
-      ) : null}
       {error ? (
         <View style={{marginTop: space.sm}}>
           <Banner tone="negative" title={error} />

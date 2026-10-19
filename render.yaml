@@ -22,6 +22,8 @@ services:
         generateValue: true
       - key: SPLITMATE_PUBLIC_BASE_URL
         sync: false # https://<this service>.onrender.com — used in invite links
+      - key: SPLITMATE_FIREBASE_CREDENTIALS
+        sync: false # Firebase service-account JSON for phone notifications (docs/push-notifications.md)
       - key: SPLITMATE_GOOGLE_CLIENT_IDS
         sync: false # the Web OAuth client ID; leave empty to hide Google sign-in
       # Bill photos are temporary (deleted once the bill is finalised), so the

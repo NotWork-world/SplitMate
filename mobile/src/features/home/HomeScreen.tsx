@@ -3,20 +3,18 @@ import {Pressable, StyleSheet, useWindowDimensions, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import Svg, {Circle, Line, Path} from 'react-native-svg';
 import {ArrowUpRight, Bell, ScanLine, Users, Utensils, Wallet} from 'lucide-react-native';
-import {useSpendingQuery, useSummaryQuery} from '../../api/endpoints';
-import {Accent, Button, IconButton, LogoMark, Screen, Text, radius, space, useTheme} from '../../design';
+import {useMyBalancesQuery, useSummaryQuery} from '../../api/endpoints';
+import {Accent, Avatar, Button, IconButton, LogoMark, Screen, Text, radius, space, useTheme} from '../../design';
 import {formatMoney} from '../../money/currency';
 import {useAppSelector} from '../../store';
 import {QueryView} from '../common/QueryView';
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function HomeScreen() {
   const nav = useNavigation();
   const {colors} = useTheme();
   const user = useAppSelector(s => s.auth.user);
   const q = useSummaryQuery(undefined, {refetchOnFocus: true, refetchOnMountOrArgChange: 30});
-  const spending = useSpendingQuery(2, {refetchOnFocus: true});
+  const balances = useMyBalancesQuery(undefined, {refetchOnFocus: true});
   const currency = user?.default_currency ?? 'INR';
   const compact = useWindowDimensions().height < 760;
 
@@ -25,7 +23,7 @@ export function HomeScreen() {
       refreshing={q.isFetching && !q.isLoading}
       onRefresh={() => {
         q.refetch();
-        spending.refetch();
+        balances.refetch();
       }}
       // The dashboard is a single page: content is sized to fit, so it never scrolls or jumps.
       contentStyle={{flexGrow: 1, paddingBottom: space.md}}
@@ -52,10 +50,6 @@ export function HomeScreen() {
           const owed = s.owed_to_me.find(b => b.currency === currency)?.amount_minor ?? 0;
           const owe = s.i_owe.find(b => b.currency === currency)?.amount_minor ?? 0;
           const net = owed - owe;
-          const months = spending.data?.months ?? [];
-          const thisMonth = months[months.length - 1];
-          const lastMonth = months[months.length - 2];
-          const change = thisMonth && lastMonth && lastMonth.amount_minor ? Math.round(((thisMonth.amount_minor - lastMonth.amount_minor) / lastMonth.amount_minor) * 100) : null;
           return (
             <>
               <Text variant="hero" align="center" style={{alignSelf: 'stretch', marginTop: compact ? 0 : space.sm}}>
@@ -70,27 +64,12 @@ export function HomeScreen() {
                 <Button label="Add expense" icon={Wallet} style={{flex: 1}} onPress={() => nav.navigate('StartExpense', {mode: 'simple'})} />
               </View>
 
-              <Text variant="title" style={{marginTop: compact ? space.md : space.xl, marginBottom: space.sm}}>
-                Your <Accent>information</Accent>
-              </Text>
-              <View style={styles.grid}>
+              <View style={[styles.grid, {marginTop: compact ? space.md : space.lg}]}>
                 <Tile label="Owed to you" value={formatMoney(owed, currency)} chip={s.owed_to_me.length > 1 ? `+${s.owed_to_me.length - 1} currency` : undefined} tone="positive" onPress={() => nav.navigate('Balances')} />
                 <Tile label="You owe" value={formatMoney(owe, currency)} tone="negative" onPress={() => nav.navigate('Balances')} />
-                <Tile
-                  label={thisMonth ? `Spent in ${MONTHS[Number(thisMonth.month.slice(5)) - 1]}` : 'This month'}
-                  value={formatMoney(thisMonth?.amount_minor ?? 0, spending.data?.currency ?? currency)}
-                  chip={change !== null ? `${change > 0 ? '+' : ''}${change}%` : undefined}
-                  tone={change !== null && change > 0 ? 'negative' : 'positive'}
-                  onPress={() => nav.navigate('Tabs', {screen: 'Activity'})}
-                />
-                <Tile
-                  label="Waiting for you"
-                  value={`${s.needs_my_action.length}`}
-                  chip={s.drafts.length ? `${s.drafts.length} draft${s.drafts.length > 1 ? 's' : ''}` : undefined}
-                  tone="neutral"
-                  onPress={() => nav.navigate('Repayments', {})}
-                />
               </View>
+
+              <PeopleCard waiting={s.needs_my_action.length} rows={compact ? 2 : 3} />
 
               {/* One wide card: start here if there are no groups, otherwise scan a bill. */}
               <Pressable
@@ -113,6 +92,79 @@ export function HomeScreen() {
         }}
       </QueryView>
     </Screen>
+  );
+}
+
+/**
+ * Who owes you and whom you owe, person by person (per group, because that's where a
+ * payment is settled), largest first, each with a one-tap Settle.
+ */
+function PeopleCard({waiting, rows}: {waiting: number; rows: number}) {
+  const nav = useNavigation();
+  const {colors} = useTheme();
+  const q = useMyBalancesQuery(undefined, {refetchOnFocus: true, refetchOnMountOrArgChange: 30});
+  const people = (q.data?.groups ?? [])
+    .flatMap(g => g.people.map(p => ({...p, group: g})))
+    .filter(p => p.amount_minor !== 0)
+    .sort((a, b) => Math.abs(b.amount_minor) - Math.abs(a.amount_minor));
+  return (
+    <View style={[styles.people, {backgroundColor: colors.surface, borderColor: colors.border}]}>
+      <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
+        <Text variant="bodyStrong">People</Text>
+        <Pressable accessibilityRole="button" hitSlop={8} onPress={() => nav.navigate('Balances')} testID="home-people-all">
+          <Text variant="smallStrong" tone="accent">
+            See all
+          </Text>
+        </Pressable>
+      </View>
+      {waiting ? (
+        <Pressable accessibilityRole="button" onPress={() => nav.navigate('Repayments', {})} style={[styles.waiting, {backgroundColor: colors.warningSoft}]}>
+          <Text variant="smallStrong" tone="warning" style={{flex: 1}}>
+            {waiting} payment{waiting > 1 ? 's' : ''} waiting for you
+          </Text>
+          <ArrowUpRight size={16} color={colors.warning} />
+        </Pressable>
+      ) : null}
+      {people.length === 0 ? (
+        <Text variant="small" tone="muted" style={{marginTop: space.sm}}>
+          {q.isLoading ? 'Loading…' : 'Nobody owes anybody. You’re all settled up.'}
+        </Text>
+      ) : (
+        people.slice(0, rows).map(p => {
+          const owesMe = p.amount_minor > 0;
+          return (
+            <View key={`${p.group.group_id}-${p.member.id}`} style={styles.personRow}>
+              <Avatar name={p.member.display_name} hue={p.member.avatar_hue} size={34} />
+              <View style={{flex: 1}}>
+                <Text variant="bodyStrong" numberOfLines={1}>
+                  {p.member.display_name}
+                </Text>
+                <Text variant="caption" tone={owesMe ? 'positive' : 'negative'} numberOfLines={1}>
+                  {owesMe ? 'owes you' : 'you owe'} {formatMoney(Math.abs(p.amount_minor), p.group.currency)} · {p.group.group_name}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${owesMe ? 'Request' : 'Pay'} ${p.member.display_name}`}
+                onPress={() =>
+                  nav.navigate('SettleUp', {
+                    groupId: p.group.group_id,
+                    memberId: p.member.id,
+                    currency: p.group.currency,
+                    amount: Math.abs(p.amount_minor),
+                    mode: owesMe ? 'request' : 'record',
+                  })
+                }
+                style={[styles.settle, {backgroundColor: owesMe ? colors.highlight : colors.text}]}>
+                <Text variant="smallStrong" color={owesMe ? colors.highlightText : colors.bg}>
+                  {owesMe ? 'Request' : 'Pay'}
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })
+      )}
+    </View>
   );
 }
 
@@ -229,5 +281,9 @@ const styles = StyleSheet.create({
   actions: {flexDirection: 'row', gap: space.sm},
   grid: {flexDirection: 'row', flexWrap: 'wrap', gap: space.sm},
   tile: {width: '48.6%', borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: space.lg, paddingVertical: space.md, minHeight: 92},
+  people: {borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: space.lg, paddingVertical: space.md, marginTop: space.sm},
+  personRow: {flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.sm},
+  settle: {paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.pill},
+  waiting: {flexDirection: 'row', alignItems: 'center', borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: space.sm, marginTop: space.sm},
   scan: {flexDirection: 'row', alignItems: 'center', gap: space.md, borderRadius: radius.lg, paddingHorizontal: space.lg, paddingVertical: space.md, marginTop: space.sm},
 });
