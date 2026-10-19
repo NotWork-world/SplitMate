@@ -20,7 +20,7 @@ import {
 } from '../../design';
 import {formatBp, formatMoney, parseBp} from '../../money/currency';
 import type {BillResult, ChargeType} from '../../money/types';
-import {newCharge, newDiscount} from './draft';
+import {matchReceiptPatch, newCharge, newDiscount} from './draft';
 
 const CHARGE_TYPES: Array<{type: ChargeType; label: string}> = [
   {type: 'service', label: 'Service charge'},
@@ -42,12 +42,14 @@ function DiscountSheet({
   currency,
   items,
   onSave,
+  onDelete,
   onClose,
 }: {
   value: DiscountPayload | null;
   currency: string;
   items: ExpensePayload['items'];
   onSave: (d: DiscountPayload) => void;
+  onDelete?: (id: string) => void;
   onClose: () => void;
 }) {
   const [d, setD] = useState<DiscountPayload | null>(value);
@@ -66,7 +68,12 @@ function DiscountSheet({
       visible={!!value}
       onClose={onClose}
       title="Bill discount"
-      footer={<Button label="Save discount" disabled={!valid} onPress={() => onSave({...d, value: d.kind === 'percent' ? bp ?? 0 : d.value})} />}>
+      footer={
+        <View style={{flexDirection: 'row', gap: space.sm}}>
+          {onDelete ? <Button label="Delete" variant="secondary" icon={Trash2} onPress={() => onDelete(d.client_id)} testID="discount-delete" /> : null}
+          <Button label="Save discount" disabled={!valid} style={{flex: 1}} onPress={() => onSave({...d, value: d.kind === 'percent' ? bp ?? 0 : d.value})} />
+        </View>
+      }>
       <TextField label="Label" value={d.label} onChangeText={label => setD({...d, label})} placeholder="Discount, SAVE100, Happy hours…" />
       <View style={{marginTop: space.md}}>
         <Segmented
@@ -152,11 +159,13 @@ function ChargeSheet({
   value,
   currency,
   onSave,
+  onDelete,
   onClose,
 }: {
   value: ChargePayload | null;
   currency: string;
   onSave: (c: ChargePayload) => void;
+  onDelete?: (id: string) => void;
   onClose: () => void;
 }) {
   const [c, setC] = useState<ChargePayload | null>(value);
@@ -180,11 +189,15 @@ function ChargeSheet({
       onClose={onClose}
       title="Charge"
       footer={
-        <Button
-          label="Save charge"
-          disabled={!valid}
-          onPress={() => onSave({...c, value: c.kind === 'percent' ? bp ?? 0 : c.value, tax_rate_bp: isAdj ? 0 : rateBp ?? 0})}
-        />
+        <View style={{flexDirection: 'row', gap: space.sm}}>
+          {onDelete ? <Button label="Delete" variant="secondary" icon={Trash2} onPress={() => onDelete(c.client_id)} testID="charge-delete" /> : null}
+          <Button
+            label="Save charge"
+            disabled={!valid}
+            style={{flex: 1}}
+            onPress={() => onSave({...c, value: c.kind === 'percent' ? bp ?? 0 : c.value, tax_rate_bp: isAdj ? 0 : rateBp ?? 0})}
+          />
+        </View>
       }>
       <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: space.sm}}>
         {CHARGE_TYPES.map(t => (
@@ -345,6 +358,14 @@ export function BillExtras({
   const cur = payload.currency;
   const discAmount = Object.fromEntries(result.discounts.map(d => [d.id, d.amount]));
   const chargeAmount = Object.fromEntries(result.charge_lines.map(c => [c.id, c]));
+  const removeDiscount = (id: string) => {
+    onChange({discounts: payload.discounts.filter(x => x.client_id !== id)});
+    setDisc(null);
+  };
+  const removeCharge = (id: string) => {
+    onChange({charges: payload.charges.filter(x => x.client_id !== id)});
+    setCharge(null);
+  };
 
   return (
     <View style={{gap: space.md}}>
@@ -354,7 +375,13 @@ export function BillExtras({
             key={d.client_id}
             title={`${d.label}${d.is_coupon ? ' (coupon)' : ''}`}
             subtitle={`${valueLabel(d.kind, d.value, cur)} · ${d.stage === 'pre_tax' ? 'before tax' : 'on final total'}${d.item_client_ids ? ` · ${d.item_client_ids.length} item(s)` : ''}`}
-            right={<Text variant="amountSmall" tone="positive">−{formatMoney(discAmount[d.client_id] ?? 0, cur)}</Text>}
+            right={
+              <View style={{flexDirection: 'row', alignItems: 'center', gap: space.xs}}>
+                <Text variant="amountSmall" tone="positive">−{formatMoney(discAmount[d.client_id] ?? 0, cur)}</Text>
+                <IconButton icon={Trash2} label={`Remove ${d.label || 'discount'}`} onPress={() => removeDiscount(d.client_id)} testID={`remove-discount-${d.client_id}`} />
+              </View>
+            }
+            chevron={false}
             onPress={() => setDisc(d)}
           />
         ))}
@@ -363,7 +390,13 @@ export function BillExtras({
             key={c.client_id}
             title={c.label}
             subtitle={`${valueLabel(c.kind, c.value, cur)}${c.tax_rate_bp ? ` + ${formatBp(c.tax_rate_bp)} GST` : ''} · split ${c.allocation === 'equal' ? 'equally' : 'by order'}`}
-            right={<Text variant="amountSmall">{formatMoney(chargeAmount[c.client_id]?.total ?? 0, cur)}</Text>}
+            right={
+              <View style={{flexDirection: 'row', alignItems: 'center', gap: space.xs}}>
+                <Text variant="amountSmall">{formatMoney(chargeAmount[c.client_id]?.total ?? 0, cur)}</Text>
+                <IconButton icon={Trash2} label={`Remove ${c.label || 'charge'}`} onPress={() => removeCharge(c.client_id)} testID={`remove-charge-${c.client_id}`} />
+              </View>
+            }
+            chevron={false}
             onPress={() => setCharge(c)}
           />
         ))}
@@ -416,15 +449,18 @@ export function BillExtras({
         />
         {result.receipt_difference ? (
           <Pressable
-            onPress={() =>
-              setCharge(newCharge({type: 'adjustment', label: 'Receipt adjustment', kind: 'fixed', value: -(result.receipt_difference ?? 0)}))
-            }
+            onPress={() => {
+              const patch = matchReceiptPatch(payload);
+              if (patch) {
+                onChange(patch);
+              }
+            }}
             style={{marginTop: space.sm, padding: space.md, borderRadius: 12, backgroundColor: colors.warningSoft}}>
             <Text variant="smallStrong" tone="warning">
               Calculated total is {formatMoney(Math.abs(result.receipt_difference), cur)} {result.receipt_difference > 0 ? 'more' : 'less'} than the receipt.
             </Text>
             <Text variant="small" tone="muted">
-              Check items, tax and charges. If the receipt is right, tap to add a labelled adjustment.
+              Usually rounding or items the restaurant didn't tax. Tap to share the difference across everyone, by order.
             </Text>
           </Pressable>
         ) : null}
@@ -435,6 +471,7 @@ export function BillExtras({
         currency={cur}
         items={payload.items}
         onClose={() => setDisc(null)}
+        onDelete={disc && payload.discounts.some(x => x.client_id === disc.client_id) ? removeDiscount : undefined}
         onSave={d => {
           const exists = payload.discounts.some(x => x.client_id === d.client_id);
           onChange({discounts: exists ? payload.discounts.map(x => (x.client_id === d.client_id ? d : x)) : [...payload.discounts, d]});
@@ -445,6 +482,7 @@ export function BillExtras({
         value={charge}
         currency={cur}
         onClose={() => setCharge(null)}
+        onDelete={charge && payload.charges.some(x => x.client_id === charge.client_id) ? removeCharge : undefined}
         onSave={c => {
           const exists = payload.charges.some(x => x.client_id === c.client_id);
           onChange({charges: exists ? payload.charges.map(x => (x.client_id === c.client_id ? c : x)) : [...payload.charges, c]});
