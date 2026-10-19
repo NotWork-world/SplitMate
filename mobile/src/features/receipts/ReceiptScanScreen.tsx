@@ -5,7 +5,7 @@ import TextRecognition from '@react-native-ml-kit/text-recognition';
 import {Camera, Check, ImagePlus, ScanLine} from 'lucide-react-native';
 import {api, ApiError, uploadFile} from '../../api/client';
 import {useMeQuery, useUpdateMeMutation} from '../../api/endpoints';
-import type {ItemPayload} from '../../api/types';
+import type {ExpensePayload, ItemPayload} from '../../api/types';
 import {
   Banner,
   Button,
@@ -26,7 +26,7 @@ import {
 import {formatBp, formatMoney, formatQty} from '../../money/currency';
 import type {AppScreen} from '../../navigation/types';
 import {useAppDispatch, useAppSelector} from '../../store';
-import {draftActions, newCharge, newDiscount, newItem} from '../expenses/draft';
+import {draftActions, matchReceiptPatch, newCharge, newDiscount, newItem, preview} from '../expenses/draft';
 
 interface Parsed {
   merchant: string | null;
@@ -177,10 +177,7 @@ export function ReceiptScanScreen({route, navigation}: AppScreen<'ReceiptScan'>)
         }),
       );
     const p = draft.payload;
-    dispatch(
-      draftActions.patch({
-        localId,
-        payload: {
+    const next: Partial<ExpensePayload> = {
           title: p.title || parsed.merchant || p.title,
           expense_date: parsed.date ?? p.expense_date,
           items: [...p.items, ...items],
@@ -208,11 +205,22 @@ export function ReceiptScanScreen({route, navigation}: AppScreen<'ReceiptScan'>)
               ]
             : p.charges,
           rounding: useExtras && parsed.round_off_minor ? {mode: 'explicit', amount_minor: parsed.round_off_minor} : p.rounding,
-        },
-      }),
-    );
+    };
+    // A small gap to the printed total is the restaurant's rounding or untaxed items (water
+    // bottles, packed goods): share it out straight away. A big gap usually means a misread
+    // price, so leave that for the person to check on the review screen.
+    const merged = {...p, ...next} as ExpensePayload;
+    const fix = matchReceiptPatch(merged);
+    const gap = merged.receipt_total_minor ? Math.abs(preview(merged).result.total - merged.receipt_total_minor) : 0;
+    const autoMatched = !!fix && gap > 0 && gap <= Math.max(500, Math.round((merged.receipt_total_minor ?? 0) * 0.02));
+    dispatch(draftActions.patch({localId, payload: autoMatched ? {...next, ...fix} : next}));
     setSaving(false);
-    toast(`${items.length} item${items.length === 1 ? '' : 's'} added from the receipt · please check them`, 'positive');
+    toast(
+      `${items.length} item${items.length === 1 ? '' : 's'} added from the receipt${
+        autoMatched ? ` · the ${formatMoney(gap, currency)} difference to the printed total is shared by everyone` : ''
+      } · please check them`,
+      'positive',
+    );
     navigation.goBack();
   };
 

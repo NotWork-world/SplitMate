@@ -10,11 +10,12 @@ import {
 } from '../../api/endpoints';
 import type {Expense} from '../../api/types';
 import {Banner, Button, CATEGORY_META, Footer, Header, IconButton, Screen, SectionTitle, Text, haptics, space, useTheme, useToast} from '../../design';
+import {formatMoney} from '../../money/currency';
 import type {AppScreen} from '../../navigation/types';
 import {useAppDispatch, useAppSelector} from '../../store';
 import {formatDate} from '../common/rows';
 import {BillBreakdown, PeopleShares} from './Breakdown';
-import {canFinalize, draftActions, preview} from './draft';
+import {canFinalize, draftActions, matchReceiptPatch, preview} from './draft';
 
 // Screens that make up "adding a bill"; all of them close once it's saved.
 const FLOW_SCREENS = new Set(['StartExpense', 'ExpenseEditor', 'ReceiptScan', 'ClaimDishes', 'BillReview']);
@@ -154,15 +155,32 @@ export function BillReviewScreen({route, navigation}: AppScreen<'BillReview'>) {
             <Pressable
               key={`${i.code}-${n}`}
               accessibilityRole="button"
-              onPress={() =>
-                i.code === 'item_unassigned' || i.code === 'percent_not_100' || i.code === 'exact_mismatch'
-                  ? navigation.navigate('ClaimDishes', {localId, startAt: i.ref ?? undefined})
-                  : navigation.navigate('ExpenseEditor', {localId})
-              }
+              onPress={() => {
+                if (i.code === 'receipt_total_mismatch') {
+                  const patch = matchReceiptPatch(p);
+                  if (patch) {
+                    dispatch(draftActions.patch({localId, payload: patch}));
+                    toast('Difference shared by everyone, in proportion to their order', 'positive');
+                  }
+                  return;
+                }
+                if (i.code === 'item_unassigned' || i.code === 'percent_not_100' || i.code === 'exact_mismatch') {
+                  navigation.navigate('ClaimDishes', {localId, startAt: i.ref ?? undefined});
+                } else {
+                  navigation.navigate('ExpenseEditor', {localId});
+                }
+              }}
+              testID={`fix-${i.code}`}
               style={{padding: space.md, borderRadius: 12, backgroundColor: colors.warningSoft}}>
-              <Text variant="small">{i.message}</Text>
+              <Text variant="small">
+                {i.code === 'receipt_total_mismatch' && p.receipt_total_minor !== null
+                  ? `The bill comes to ${formatMoney(r.total, p.currency)} but the receipt says ${formatMoney(p.receipt_total_minor, p.currency)}. Usually that's the restaurant's rounding or items it didn't tax (like water bottles).`
+                  : i.message}
+              </Text>
               <Text variant="caption" tone="warning" style={{marginTop: 2}}>
-                Tap to fix →
+                {i.code === 'receipt_total_mismatch'
+                  ? `Tap to share the ${formatMoney(Math.abs(r.total - (p.receipt_total_minor ?? r.total)), p.currency)} difference across everyone →`
+                  : 'Tap to fix →'}
               </Text>
             </Pressable>
           ))}

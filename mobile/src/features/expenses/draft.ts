@@ -266,3 +266,41 @@ export function createDraft(groupId: string, payload: ExpensePayload, server?: E
     updatedAt: Date.now(),
   };
 }
+
+const RECEIPT_ADJUST = 'receipt-adjust';
+
+/**
+ * Make the bill match the total printed on the receipt. Restaurants round, leave packed
+ * items untaxed or simply add up wrong; the gap becomes one labelled line shared by
+ * everyone in proportion to what they had (a fee if the receipt is higher, a discount if
+ * it's lower), so nobody's dish is changed. Returns null when it already matches.
+ */
+export function matchReceiptPatch(p: ExpensePayload): Pick<ExpensePayload, 'charges' | 'discounts'> | null {
+  if (p.receipt_total_minor === null || p.receipt_total_minor === undefined) {
+    return null;
+  }
+  const base = {
+    ...p,
+    charges: p.charges.filter(c => c.client_id !== RECEIPT_ADJUST),
+    discounts: p.discounts.filter(d => d.client_id !== RECEIPT_ADJUST),
+  };
+  const diff = p.receipt_total_minor - preview(base).result.total;
+  const label = 'Receipt difference (rounding, untaxed items)';
+  if (diff > 0) {
+    const charge: ChargePayload = {
+      client_id: RECEIPT_ADJUST, label, type: 'adjustment', kind: 'fixed', value: diff,
+      tax_rate_bp: 0, tax_scheme: 'gst', allocation: 'proportional',
+    };
+    return {charges: [...base.charges, charge], discounts: base.discounts};
+  }
+  if (diff < 0) {
+    const discount: DiscountPayload = {
+      client_id: RECEIPT_ADJUST, label, kind: 'fixed', value: -diff, stage: 'post_tax',
+      allocation: 'proportional', item_client_ids: null, is_coupon: false,
+    };
+    return {charges: base.charges, discounts: [...base.discounts, discount]};
+  }
+  return base.charges.length !== p.charges.length || base.discounts.length !== p.discounts.length
+    ? {charges: base.charges, discounts: base.discounts}
+    : null;
+}
