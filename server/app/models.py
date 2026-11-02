@@ -55,6 +55,8 @@ class User(TimestampMixin, Base):
     upi_id: Mapped[str | None] = mapped_column(String(100))
     # The exact text of the person's own UPI QR (upi://pay?...), so it can be shown unchanged.
     upi_qr: Mapped[str | None] = mapped_column(String(1000))
+    # Optional, shown to group members so they can nudge on WhatsApp.
+    phone: Mapped[str | None] = mapped_column(String(20))
     default_currency: Mapped[str] = mapped_column(String(3), default="INR", nullable=False)
     preferences: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -373,6 +375,7 @@ REPAYMENT_STATES = (
     "DISPUTED",
     "CANCELLED",
     "REJECTED",
+    "REVERTED",
 )
 
 

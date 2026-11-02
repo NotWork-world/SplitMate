@@ -38,7 +38,7 @@ import {
   space,
   useToast,
 } from '../../design';
-import {APP_VERSION, apiUrl, DEFAULT_API_URL, saveApiUrl} from '../../config';
+import {APP_VERSION} from '../../config';
 import {SUPPORTED_CURRENCIES} from '../../money/currency';
 import type {AppScreen} from '../../navigation/types';
 import {signedOut, useAppDispatch, useAppSelector, userUpdated} from '../../store';
@@ -114,6 +114,7 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
   const [name, setName] = useState('');
   const [upi, setUpi] = useState('');
   const [uname, setUname] = useState('');
+  const [phone, setPhone] = useState('');
   // The exact text of the person's own UPI QR, when they imported it from a picture.
   const [qr, setQr] = useState<string | null>(null);
   const [currency, setCurrency] = useState('INR');
@@ -129,6 +130,7 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
       setUpi(me.data.upi_id ?? '');
       setQr(me.data.upi_qr ?? null);
       setUname(me.data.username ?? '');
+      setPhone(me.data.phone ?? '');
       setCurrency(me.data.default_currency);
       setHue(me.data.avatar_hue);
     }
@@ -151,7 +153,7 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
             onPress={async () => {
               setError(null);
               try {
-                const u = await update({display_name: name.trim(), username: uname.trim().replace(/^@/, '').toLowerCase(), upi_id: upi.trim(), upi_qr: qr && qrMatches(qr, upi) ? qr : '', default_currency: currency, avatar_hue: hue}).unwrap();
+                const u = await update({display_name: name.trim(), username: uname.trim().replace(/^@/, '').toLowerCase(), upi_id: upi.trim(), upi_qr: qr && qrMatches(qr, upi) ? qr : '', default_currency: currency, avatar_hue: hue, phone: phone.trim() || ''}).unwrap();
                 dispatch(userUpdated(u));
                 toast('Profile saved', 'positive');
                 navigation.goBack();
@@ -190,6 +192,16 @@ export function EditProfileScreen({navigation}: AppScreen<'EditProfile'>) {
         error={unameErr}
         hint="Friends add you to groups with this."
         testID="profile-username"
+      />
+      <TextField
+        containerStyle={{marginTop: space.lg}}
+        label="Phone (optional)"
+        placeholder="+91 98765 43210"
+        keyboardType="phone-pad"
+        value={phone}
+        onChangeText={setPhone}
+        hint="Only people in your groups can see it. They use it to send you payment reminders on WhatsApp."
+        testID="profile-phone"
       />
       <TextField
         containerStyle={{marginTop: space.lg}}
@@ -292,7 +304,6 @@ export function SettingsScreen() {
   const [exportData, exportState] = useExportDataMutation();
   const [deleteAccount, deleteState] = useDeleteAccountMutation();
   const {preference, setPreference} = useThemePreference();
-  const [server, setServer] = useState(apiUrl());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -321,6 +332,16 @@ export function SettingsScreen() {
           ? 'These also arrive on your phone. Turn them off for SplitMate in Android settings if you only want them in the bell.'
           : 'These show in the bell on the home screen.'}
       </Text>
+
+      <SectionTitle title="Payments" />
+      <Card padded={false} style={{paddingHorizontal: space.md}}>
+        <SwitchRow
+          title="Auto-verify UPI payments"
+          subtitle="When someone records a UPI payment to you with a 12-digit reference, mark it as received without asking. You can always take a confirmation back."
+          value={prefs.autoconfirm_upi === true}
+          onChange={v => setPref('autoconfirm_upi', v)}
+        />
+      </Card>
 
       <SectionTitle title="Appearance" />
       <Segmented
@@ -354,29 +375,17 @@ export function SettingsScreen() {
 
       <SectionTitle title="Advanced" />
       <Card>
-        <View style={{flexDirection: 'row', alignItems: 'center', gap: space.sm, marginBottom: space.sm}}>
+        <View style={{flexDirection: 'row', alignItems: 'center', gap: space.sm}}>
           <Server size={16} color="#8C90AE" />
           <Text variant="smallStrong" tone="muted">
-            Server {health.data ? `· v${health.data.version} ✓` : health.isError ? '· unreachable' : ''}
+            Server {health.data ? `· v${health.data.version}` : health.isError ? '· unreachable' : ''}
           </Text>
         </View>
-        <TextField value={server} onChangeText={setServer} autoCapitalize="none" keyboardType="url" />
-        <View style={{flexDirection: 'row', gap: space.sm, marginTop: space.sm}}>
-          <Button
-            label="Save & sign out"
-            variant="secondary"
-            size="sm"
-            disabled={!/^https?:\/\/\S+$/.test(server.trim()) || server.trim() === apiUrl()}
-            onPress={async () => {
-              await saveApiUrl(server.trim() === DEFAULT_API_URL ? null : server.trim());
-              await signOut(dispatch);
-            }}
-          />
-          <Button label="Reset" variant="ghost" size="sm" onPress={() => setServer(DEFAULT_API_URL)} />
-        </View>
-        <Text variant="caption" tone="faint" style={{marginTop: space.xs}}>
-          Changing the server signs you out, because accounts live on the server.
-        </Text>
+        {health.isError ? (
+          <Text variant="caption" tone="warning" style={{marginTop: space.xs}}>
+            Couldn't reach the server just now. Check your internet and reopen the app.
+          </Text>
+        ) : null}
       </Card>
 
       <Sheet

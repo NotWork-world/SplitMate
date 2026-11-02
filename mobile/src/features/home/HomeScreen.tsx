@@ -74,7 +74,7 @@ export function HomeScreen() {
               {/* One wide card: start here if there are no groups, otherwise scan a bill. */}
               <Pressable
                 accessibilityRole="button"
-                onPress={() => (s.group_count === 0 ? nav.navigate('CreateGroup') : nav.navigate('StartExpense', {mode: 'itemized'}))}
+                onPress={() => (s.group_count === 0 ? nav.navigate('CreateGroup') : nav.navigate('ReceiptScan', {}))}
                 style={[styles.scan, {backgroundColor: colors.highlight}]}>
                 {s.group_count === 0 ? <Users size={22} color={colors.highlightText} /> : <ScanLine size={22} color={colors.highlightText} />}
                 <View style={{flex: 1}}>

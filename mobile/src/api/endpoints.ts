@@ -56,7 +56,7 @@ export const splitApi = createApi({
   endpoints: b => ({
     health: b.query<Health, void>({query: () => '/health'}),
     me: b.query<User, void>({query: () => '/me', providesTags: ['Me']}),
-    updateMe: b.mutation<User, Partial<Pick<User, 'display_name' | 'username' | 'upi_id' | 'upi_qr' | 'default_currency' | 'avatar_hue'>> & {preferences?: Record<string, boolean>}>({
+    updateMe: b.mutation<User, Partial<Pick<User, 'display_name' | 'username' | 'upi_id' | 'upi_qr' | 'default_currency' | 'avatar_hue' | 'phone'>> & {preferences?: Record<string, boolean>}>({
       query: body => ({url: '/me', method: 'PATCH', body}),
       invalidatesTags: ['Me', 'Groups', 'Summary'],
     }),
@@ -182,6 +182,10 @@ export const splitApi = createApi({
       query: ({id, idempotencyKey, ...body}) => ({url: `/repayments/${id}/actions`, method: 'POST', body, idempotencyKey}),
       invalidatesTags: [...MONEY_TAGS],
     }),
+    remind: b.mutation<{amount_minor: number; currency: string}, {group_id: string; other_member_id: string; currency: string}>({
+      query: body => ({url: '/repayments/remind', method: 'POST', body}),
+      invalidatesTags: [...MONEY_TAGS],
+    }),
 
     activity: b.query<Page<ActivityItem>, {groupId?: string} | void>({
       query: a => `/activity${qs({group_id: a?.groupId, limit: 50})}`,
@@ -231,6 +235,7 @@ export const {
   useRepaymentQuery,
   useCreateRepaymentMutation,
   useRepaymentActionMutation,
+  useRemindMutation,
   useActivityQuery,
   useNotificationsQuery,
   useMarkNotificationsReadMutation,

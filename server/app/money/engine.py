@@ -365,7 +365,7 @@ def _item_weights(it: Item, net: int, ctx: _Ctx) -> list[tuple[str, int]] | None
     total = sum(c.value for c in it.consumers)
     if mode == "shares":
         if any(c.value <= 0 for c in it.consumers):
-            ctx.add("invalid_allocation", f"{label}: every share must be at least 1.", it.id)
+            ctx.add("invalid_allocation", f"{label}: every share must be more than zero.", it.id)
             return None
     elif mode == "percent":
         if total != BP:

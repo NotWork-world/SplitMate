@@ -135,7 +135,15 @@ export function SettleUpScreen({route, navigation}: AppScreen<'SettleUp'>) {
         </Text>
       ) : null}
       {mode === 'record' ? (
-        <TextField containerStyle={{marginTop: space.md}} label="Reference (optional)" placeholder="UPI ref / UTR" value={reference} onChangeText={setReference} />
+        <TextField
+          containerStyle={{marginTop: space.md}}
+          label={method === 'upi' ? 'UPI reference (UTR)' : 'Reference (optional)'}
+          placeholder={method === 'upi' ? '12 digits from the payment receipt' : 'Optional'}
+          keyboardType={method === 'upi' ? 'number-pad' : 'default'}
+          value={reference}
+          onChangeText={t => setReference(t.replace(/[^\d]/g, '').slice(0, 12))}
+          hint={method === 'upi' && mode === 'record' ? 'With the 12-digit UPI reference, SplitMate verifies the payment instantly when the receiver allows it — no waiting for their approval.' : undefined}
+        />
       ) : null}
       <TextField containerStyle={{marginTop: space.md}} label="Note (optional)" value={note} onChangeText={setNote} />
       <Text variant="small" tone="faint" style={{marginTop: space.lg}}>

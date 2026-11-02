@@ -69,6 +69,14 @@
       "expect": {"total": 90000, "people": {"a": 60000, "b": 30000}, "issues": []}
     },
     {
+      "name": "roti: 8 shared as ½, 2, ¼ and the rest (thousandth shares)",
+      "input": {
+        "currency": "INR",
+        "items": [{"id": "roti", "name": "Roti", "quantity_milli": 8000, "unit_price_minor": 1200, "split_mode": "shares", "consumers": [{"member_id": "a", "value": 500}, {"member_id": "b", "value": 2000}, {"member_id": "c", "value": 250}, {"member_id": "d", "value": 5250}]}]
+      },
+      "expect": {"total": 9600, "people": {"a": 600, "b": 2400, "c": 300, "d": 6300}, "issues": []}
+    },
+    {
       "name": "tax-inclusive price is not taxed again",
       "input": {
         "currency": "INR",

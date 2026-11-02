@@ -238,10 +238,31 @@ export const draftsReducer = slice.reducer;
 export async function loadDrafts(): Promise<Record<string, Draft>> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, Draft>) : {};
+    if (!raw) {
+      return {};
+    }
+    const byId = JSON.parse(raw) as Record<string, Draft>;
+    return Object.fromEntries(Object.entries(byId).map(([id, d]) => [id, normalizeDraft(d)]));
   } catch {
     return {};
   }
+}
+
+/**
+ * Shares are stored in thousandths (½ = 500) since the fraction update; older local drafts
+ * on this phone used whole shares. Every share on one item was written by the same era of
+ * the app, so if no share on the item reaches 1000, they're all old-scale: lift them.
+ * (A brand-new item where every person had under one whole share is practically the same
+ * money split either way, because shares are only proportions.)
+ */
+function normalizeDraft(d: Draft): Draft {
+  const items = d.payload.items.map(it => {
+    if (it.split_mode !== 'shares' || !it.consumers.length || it.consumers.some(c => c.value >= 1000)) {
+      return it;
+    }
+    return {...it, consumers: it.consumers.map(c => ({...c, value: c.value * 1000}))};
+  });
+  return items === d.payload.items ? d : {...d, payload: {...d.payload, items}};
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;

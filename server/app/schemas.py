@@ -64,6 +64,7 @@ class UserOut(Out):
     avatar_hue: int
     upi_id: str | None
     upi_qr: str | None = None
+    phone: str | None = None
     default_currency: str
     preferences: dict[str, Any]
     has_password: bool = False
@@ -84,6 +85,7 @@ class ProfileUpdate(BaseModel):
     username: str | None = Field(default=None, min_length=3, max_length=20)
     upi_qr: str | None = Field(default=None, max_length=1000, pattern=r"^$|^(?i:upi)://pay\?\S+$")
     upi_id: str | None = Field(default=None, max_length=100, pattern=r"^$|^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,64}$")
+    phone: str | None = Field(default=None, max_length=20, pattern=r"^$|^\+?[0-9][0-9\s\-]{6,18}$")
     default_currency: str | None = Field(default=None, min_length=3, max_length=3)
     avatar_hue: int | None = Field(default=None, ge=0, le=359)
     preferences: dict[str, bool] | None = None
@@ -166,6 +168,7 @@ class MemberOut(Out):
     avatar_hue: int = 260
     upi_id: str | None = None  # only if the person added one to their profile
     upi_qr: str | None = None
+    phone: str | None = None
     username: str | None = None
 
 
@@ -369,8 +372,14 @@ class RepaymentCreate(BaseModel):
     reference: str | None = Field(default=None, max_length=80)
 
 
+class RemindIn(BaseModel):
+    group_id: uuid.UUID
+    other_member_id: uuid.UUID
+    currency: str = Field(min_length=3, max_length=3)
+
+
 class RepaymentAction(BaseModel):
-    action: Literal["mark_sent", "confirm", "dispute", "reject", "cancel", "resubmit"]
+    action: Literal["mark_sent", "confirm", "dispute", "reject", "cancel", "resubmit", "revert"]
     note: str | None = Field(default=None, max_length=280)
     reference: str | None = Field(default=None, max_length=80)
     method: Literal["cash", "upi", "bank", "other"] | None = None

@@ -180,3 +180,44 @@ def test_real_restaurant_bill_from_phone_ocr():
     assert [(t.component, t.rate_bp, t.amount_minor) for t in r.taxes] == [("CGST", 250, 3536), ("SGST", 250, 3536)]
     assert r.round_off_minor == -6 and r.total_minor == 148500 and r.date == "2026-10-16"
     assert r.warnings == []
+
+
+def test_handwritten_dhaba_bill_with_counts_and_rates():
+    """No paise anywhere, quantities written like humans do: Roti 8 x 12 96."""
+    r = parse_receipt(
+        lines("Rahul Ka Dhaba", "Paneer Tikka 320", "Roti 8 x 12 96", "Dal Makhani 245", "Total 661"),
+        "INR",
+    )
+    assert r.merchant == "Rahul Ka Dhaba"
+    assert r.category == "food"
+    roti = next(i for i in r.items if i.name == "Roti")
+    assert (roti.quantity_milli, roti.unit_price_minor, roti.amount_minor, roti.confidence) == (8000, 1200, 9600, 95)
+    assert sum(i.amount_minor for i in r.items) == 66100 == r.total_minor
+
+
+def test_leading_count_without_rate():
+    """Handwritten '2 Roti 24': the count comes first, only the total is printed."""
+    r = parse_receipt(lines("Sharma Ji Ka Dhaba", "2 Roti 24", "Total 24"), "INR")
+    roti = next(i for i in r.items if i.name == "Roti")
+    assert (roti.quantity_milli, roti.unit_price_minor) == (2000, 1200)
+
+
+def test_letter_shaped_digits_are_repaired():
+    """UniOCR on handwriting sometimes reads 0 as O and 1 as I/l inside numbers."""
+    r = parse_receipt(lines("Canteen", "Samosa 1O0", "Chai l5", "Total 115"), "INR")
+    amounts = {i.name: i.amount_minor for i in r.items}
+    assert amounts["Samosa"] == 10000
+    assert amounts["Chai"] == 1500
+    assert r.total_minor == 11500
+
+
+def test_auto_rickshaw_and_uber_bills_become_one_item():
+    """A ride bill has no dishes: one item for the whole fare, so it can still be split."""
+    auto = parse_receipt(lines("Auto Rickshaw", "Distance: 3.5 km", "Fare 120", "Total 120"), "INR")
+    assert auto.category == "transport"
+    assert [i.amount_minor for i in auto.items] == [12000] and auto.total_minor == 12000
+
+    uber = parse_receipt(lines("Uber", "Trip to Indiranagar", "245.67", "Paid to driver"), "INR")
+    assert uber.category == "transport"
+    assert [(i.name, i.amount_minor, i.confidence) for i in uber.items] == [("The whole bill", 24567, 60)]
+    assert uber.total_minor == 24567

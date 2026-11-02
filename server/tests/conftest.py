@@ -14,6 +14,7 @@ os.environ["SPLITMATE_AUTH_RATE_LIMIT_PER_MINUTE"] = "0"
 os.environ["SPLITMATE_RATE_LIMIT_PER_MINUTE"] = "0"
 # Real environment variables beat server/.env, so a developer's local .env can't leak into tests.
 os.environ["SPLITMATE_GOOGLE_CLIENT_IDS"] = ""
+os.environ["SPLITMATE_FIREBASE_CREDENTIALS"] = ""  # tests never push to a real Firebase project
 os.environ["SPLITMATE_STORAGE_BACKEND"] = "local"
 os.environ["SPLITMATE_PUBLIC_BASE_URL"] = "http://testserver"
 

@@ -73,6 +73,7 @@ export const STATUS_LABEL: Record<string, string> = {
   DISPUTED: 'Disputed',
   CANCELLED: 'Cancelled',
   REJECTED: 'Rejected',
+  REVERTED: 'Confirmed then taken back',
 };
 
 export function RepaymentRow({r, onPress}: {r: Repayment; onPress: () => void}) {

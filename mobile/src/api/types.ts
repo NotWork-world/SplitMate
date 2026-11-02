@@ -8,6 +8,7 @@ export interface User {
   avatar_hue: number;
   upi_id: string | null;
   upi_qr?: string | null;
+  phone?: string | null;
   default_currency: string;
   preferences: Record<string, boolean>;
   has_password: boolean;
@@ -34,6 +35,7 @@ export interface Member {
   upi_id?: string | null;
   username?: string | null;
   upi_qr?: string | null;
+  phone?: string | null;
 }
 
 export interface PublicUser {
@@ -179,9 +181,10 @@ export type RepaymentStatus =
   | 'CONFIRMED'
   | 'DISPUTED'
   | 'CANCELLED'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'REVERTED';
 
-export type RepaymentActionName = 'mark_sent' | 'confirm' | 'dispute' | 'reject' | 'cancel' | 'resubmit';
+export type RepaymentActionName = 'mark_sent' | 'confirm' | 'dispute' | 'reject' | 'cancel' | 'resubmit' | 'revert';
 
 export interface Repayment {
   id: string;

@@ -11,7 +11,7 @@ from ..core.ratelimit import write_limit
 from ..db import get_db
 from ..deps import current_user
 from ..models import GroupMember, Repayment, User
-from ..schemas import RepaymentAction, RepaymentCreate
+from ..schemas import RepaymentAction, RepaymentCreate, RemindIn
 from ..services import idempotency
 from ..services import repayments as svc
 from .serialize import repayment_out
@@ -84,3 +84,15 @@ def act_on_repayment(
         return repayment_out(db, rep, me)
 
     return idempotency.run(db, user, idempotency_key, f"repayment.action:{repayment_id}", body, work)
+
+
+@router.post("/repayments/remind", dependencies=[Depends(write_limit)])
+def remind_about_debt(
+    body: RemindIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Nudge the other person: an in-app notification with what they owe right now."""
+    owed = svc.remind(db, user, body.group_id, body.other_member_id, body.currency)
+    db.commit()
+    return {"amount_minor": owed, "currency": body.currency.upper()}

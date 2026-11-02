@@ -1,5 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import {UserPlus} from 'lucide-react-native';
+import {UserPlus, ScanLine} from 'lucide-react-native';
+import {View} from 'react-native';
 import {useGroupsQuery} from '../../api/endpoints';
 import type {Group} from '../../api/types';
 import {Button, Card, EmptyState, GROUP_TYPE_META, Header, ListRow, Screen, SectionTitle, Text, space} from '../../design';
@@ -37,10 +38,24 @@ export function StartExpenseScreen({route, navigation}: AppScreen<'StartExpense'
   }, [groupId, groups.data]);
 
   return (
-    <Screen header={<Header title={mode === 'itemized' ? 'Split a bill' : 'Add an expense'} subtitle="Who is it with?" />}>
-      <Button label="Choose people" icon={UserPlus} variant="food" size="lg" onPress={() => setPicking(true)} style={{marginTop: space.sm}} testID="start-choose-people" />
-      <Text variant="caption" tone="faint" style={{marginTop: space.xs}}>
-        No group needed: pick friends and split. Or use one of your groups below.
+    <Screen header={<Header title={mode === 'itemized' ? 'Split a bill' : 'Add an expense'} subtitle="Start with a photo of the bill" />}>
+      <Button
+        label="Scan a bill"
+        icon={ScanLine}
+        variant="food"
+        size="lg"
+        onPress={() => navigation.navigate('ReceiptScan', {})}
+        style={{marginTop: space.sm}}
+        testID="start-scan-bill"
+      />
+      <Text variant="caption" tone="faint" style={{marginTop: space.xs, textAlign: 'center'}}>
+        Photograph or upload the bill — printed or handwritten. SplitMate reads it on this phone, you check the items, then pick who's splitting.
+      </Text>
+      <View style={{flexDirection: 'row', gap: space.sm, marginTop: space.md}}>
+        <Button label="Type it in" icon={UserPlus} variant="secondary" style={{flex: 1}} onPress={() => setPicking(true)} testID="start-choose-people" />
+      </View>
+      <Text variant="caption" tone="faint" style={{marginTop: space.xs, textAlign: 'center'}}>
+        No photo? Pick people first and type the items by hand. Or use one of your groups below.
       </Text>
       <PeoplePickerSheet
         visible={picking}

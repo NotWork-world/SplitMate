@@ -116,7 +116,7 @@ function itemWeights(it: ItemIn, net: number, ctx: Ctx): Array<[string, number]>
   const total = sum(consumers.map(val));
   if (mode === 'shares') {
     if (consumers.some(c => val(c) <= 0)) {
-      ctx.add('invalid_allocation', `${label}: every share must be at least 1.`, it.id);
+      ctx.add('invalid_allocation', `${label}: every share must be more than zero.`, it.id);
       return null;
     }
   } else if (mode === 'percent') {

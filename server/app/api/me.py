@@ -124,6 +124,8 @@ def update_me(body: ProfileUpdate, user: User = Depends(current_user), db: Sessi
         user.upi_id = body.upi_id or None
     if body.upi_qr is not None:
         user.upi_qr = body.upi_qr or None
+    if body.phone is not None:
+        user.phone = body.phone or None
     if user.upi_qr and (not user.upi_id or f"pa={user.upi_id}".lower() not in unquote(user.upi_qr).lower()):
         user.upi_qr = None  # a QR for a different UPI ID than the one shown would send money elsewhere
     if body.default_currency is not None:
@@ -133,7 +135,7 @@ def update_me(body: ProfileUpdate, user: User = Depends(current_user), db: Sessi
     if body.avatar_hue is not None:
         user.avatar_hue = body.avatar_hue
     if body.preferences is not None:
-        allowed = {"notify_expenses", "notify_repayments", "notify_groups", "receipt_processing_consent"}
+        allowed = {"notify_expenses", "notify_repayments", "notify_groups", "receipt_processing_consent", "autoconfirm_upi"}
         user.preferences = {**(user.preferences or {}), **{k: v for k, v in body.preferences.items() if k in allowed}}
     db.commit()
     return auth_svc.user_out(user)

@@ -73,3 +73,7 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# OCR pipeline check artifacts (node/tsc build output and generated test bills)
+/.ocr-check/
+/scripts/ocr_test_output/

@@ -3,12 +3,14 @@ import {Linking, Pressable, View} from 'react-native';
 import {ChevronRight} from 'lucide-react-native';
 import {Banner, Sheet, Text, radius, space, useTheme} from '../design';
 import QRCode from 'react-native-qrcode-svg';
-import {installedUpiApps, UPI_APPS, upiPayUrl, type UpiAppKey} from './upi';
+import {installedUpiApps, parseUpiQr, UPI_APPS, upiPayUrl, type UpiAppKey} from './upi';
 
 /**
  * Asks which UPI app to pay with, then opens that app on its pay screen with the
  * payee's UPI ID and the amount filled in (some UPI apps refuse to let you type it if it's missing).
  * SplitMate can't see the result, so the caller asks them to mark it paid afterwards.
+ * The QR shown is always one SplitMate generates itself, with the exact amount baked in —
+ * never the payee's photo of their own QR (that one can't carry the amount).
  */
 export function UpiPaySheet({
   visible,
@@ -28,13 +30,19 @@ export function UpiPaySheet({
   note?: string;
   amount?: string; // decimal text like "100.00"
   amountLabel?: string; // formatted, like "₹100.00"
-  qr?: string | null; // their own UPI QR text, shown unchanged when they added one
+  qr?: string | null; // their own UPI QR text: used only to find their UPI ID when missing
   onLaunched: () => void;
 }) {
   const {colors} = useTheme();
   const [installed, setInstalled] = useState<Set<UpiAppKey> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
+
+  // A stored QR is only a way to find the payee's UPI ID; the QR we show is always ours,
+  // regenerated with the exact amount so it can never be paid wrong by mistake.
+  const fromQr = !upiId && qr ? parseUpiQr(qr) : null;
+  const payeeId = upiId || fromQr?.upiId || '';
+  const payeeName = fromQr?.name || name;
 
   useEffect(() => {
     if (visible) {
@@ -46,7 +54,7 @@ export function UpiPaySheet({
   const open = async (base: string, label: string) => {
     setError(null);
     try {
-      await Linking.openURL(upiPayUrl(base, {upiId, name, note, amount}));
+      await Linking.openURL(upiPayUrl(base, {upiId: payeeId, name: payeeName, note, amount}));
       onLaunched();
       onClose();
     } catch {
@@ -58,10 +66,10 @@ export function UpiPaySheet({
     <Sheet visible={visible} onClose={onClose} title="Pay with which app?">
       <View style={{backgroundColor: colors.surfacePressed, borderRadius: radius.md, padding: space.md}}>
         <Text variant="small" tone="muted">
-          Paying {name}
+          Paying {payeeName}
         </Text>
         <Text variant="bodyStrong" selectable>
-          {upiId}
+          {payeeId}
         </Text>
         {amountLabel ? (
           <Text variant="small" tone="muted" style={{marginTop: 4}}>
@@ -70,16 +78,17 @@ export function UpiPaySheet({
         ) : null}
         <Pressable accessibilityRole="button" onPress={() => setShowQr(s => !s)} style={{marginTop: space.sm}} testID="upi-show-qr">
           <Text variant="smallStrong" tone="accent">
-            {showQr ? 'Hide QR code' : `Show ${name}'s QR code`}
+            {showQr ? 'Hide QR code' : `Show ${payeeName}'s QR code`}
           </Text>
         </Pressable>
         {showQr ? (
           <View style={{alignItems: 'center', marginTop: space.sm}}>
             <View style={{padding: space.md, backgroundColor: '#FFFFFF', borderRadius: radius.md}}>
-              <QRCode value={qr || upiPayUrl('upi://pay', {upiId, name, note, amount})} size={180} />
+              <QRCode value={upiPayUrl('upi://pay', {upiId: payeeId, name: payeeName, note, amount})} size={180} />
             </View>
             <Text variant="caption" tone="faint" align="center" style={{marginTop: space.xs}}>
-              {qr ? `${name}'s own UPI QR. Scan it from another phone.` : 'Scan from another phone to pay.'}
+              SplitMate's QR for {payeeId}
+              {amountLabel ? ` · always for the exact amount (${amountLabel})` : ''} · scan from another phone to pay.
             </Text>
           </View>
         ) : null}
@@ -128,7 +137,7 @@ export function UpiPaySheet({
         })}
       </View>
       <Text variant="caption" tone="faint" style={{marginTop: space.md}}>
-        After paying, come back and tap "I paid" so {name} can confirm it.
+        After paying, come back and tap "I paid" and paste the 12-digit UPI reference from the payment receipt — if {payeeName} has auto-verify on, it's confirmed instantly without asking them.
       </Text>
     </Sheet>
   );

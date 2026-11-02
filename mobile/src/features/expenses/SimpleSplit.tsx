@@ -3,7 +3,7 @@ import {Pressable, View} from 'react-native';
 import {Check} from 'lucide-react-native';
 import type {ExpensePayload, ItemPayload, Member, SplitKind} from '../../api/types';
 import {Avatar, Card, Chip, MoneyField, Segmented, Text, TextField, space, useTheme} from '../../design';
-import {formatBp, formatMoney, parseBp} from '../../money/currency';
+import {formatBp, formatMoney, formatQty, parseBp} from '../../money/currency';
 import type {BillResult} from '../../money/types';
 import {newItem} from './draft';
 
@@ -38,7 +38,7 @@ export function SimpleSplit({
   const toggle = (id: string) => {
     const next = included(id)
       ? item.consumers.filter(c => c.member_id !== id)
-      : [...item.consumers, {member_id: id, value: mode === 'shares' ? 1 : 0}];
+      : [...item.consumers, {member_id: id, value: mode === 'shares' ? 1000 : 0}];
     setItem({consumers: next});
   };
   const setValue = (id: string, value: number) =>
@@ -59,7 +59,7 @@ export function SimpleSplit({
       <Segmented<SplitKind>
         value={mode}
         onChange={k => {
-          const values = item.consumers.map(c => ({member_id: c.member_id, value: k === 'shares' ? 1 : 0}));
+          const values = item.consumers.map(c => ({member_id: c.member_id, value: k === 'shares' ? 1000 : 0}));
           setPctText({});
           setItem({split_mode: k as ItemPayload['split_mode'], consumers: values}, k);
         }}
@@ -117,11 +117,13 @@ export function SimpleSplit({
               ) : null}
               {on && mode === 'shares' ? (
                 <View style={{flexDirection: 'row', alignItems: 'center', gap: space.xs}}>
-                  <Stepper label="−" onPress={() => setValue(m.id, Math.max(1, (consumerValue(m.id) ?? 1) - 1))} />
-                  <Text variant="bodyStrong" style={{minWidth: 24, textAlign: 'center'}}>
-                    {consumerValue(m.id) ?? 1}
+                  <Stepper label="−" onPress={() => setValue(m.id, Math.max(250, (consumerValue(m.id) ?? 1000) - 1000))} />
+                  <Text variant="bodyStrong" style={{minWidth: 34, textAlign: 'center'}}>
+                    {formatQty(consumerValue(m.id) ?? 1000)}
                   </Text>
-                  <Stepper label="+" onPress={() => setValue(m.id, (consumerValue(m.id) ?? 1) + 1)} />
+                  <Stepper label="+" onPress={() => setValue(m.id, (consumerValue(m.id) ?? 1000) + 1000)} />
+                  <Chip label="½" onPress={() => setValue(m.id, 500)} />
+                  <Chip label="¼" onPress={() => setValue(m.id, 250)} />
                 </View>
               ) : null}
             </View>

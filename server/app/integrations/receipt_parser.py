@@ -1,7 +1,7 @@
 """Turn OCR text lines into a structured, reviewable receipt.
 
 The OCR itself is replaceable (``OcrLine`` is all a provider must produce):
-today the Android app runs ML Kit on the phone and sends recognised lines with
+today the Android app runs UniOCR on the phone and sends recognised lines with
 their positions. This parser never invents values: anything it can't read is
 left out, every extracted field keeps the text it came from, and uncertain
 items get a low confidence so the review screen highlights them.
@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import date
 
 from ..money.currency import get_currency
+
+# Parser upgrades are exercised by tests/test_receipts.py and the smoke bill in mobile/scripts.
 
 
 @dataclass
@@ -56,6 +58,7 @@ class ParsedReceipt:
     merchant: str | None = None
     date: str | None = None
     currency: str = "INR"
+    category: str | None = None  # a guess the app can preselect: food | transport | ...
     items: list[ParsedItem] = field(default_factory=list)
     taxes: list[ParsedTax] = field(default_factory=list)
     charges: list[ParsedAmount] = field(default_factory=list)
@@ -104,10 +107,26 @@ CHARGE_WORDS = {
 }
 DISCOUNT_WORDS = re.compile(r"\b(discount|disc\.?|offer|promo|coupon|less)\b", re.I)
 ROUND_WORDS = re.compile(r"round\s*(off|ing)?|r\.?\s*off", re.I)
+# Any bill, not just food: rides, fuel, utilities, tickets…  Used to name the single
+# item a non-itemised bill becomes, and to suggest the app's category chip.
+RIDE_WORDS = re.compile(r"\b(auto\s*-?\s*rickshaw|rickshaw|auto|taxi|cab|uber|ola|rapido|rapido\s*bike|fare|trip|ride|journey|driver|drop|pickup)\b", re.I)
+CATEGORY_WORDS = [
+    ("transport", re.compile(r"\b(uber|ola|rapido|auto\s*-?\s*rickshaw|rickshaw|taxi|cab|metro|railway|train\s*ticket|bus\s*ticket|flight|air\s*india|indigo|irctc)\b", re.I)),
+    ("fuel", re.compile(r"\b(petrol|diesel|cng|fuel|hp\s*petrol|bharat\s*petroleum|indian\s*oil|shell)\b", re.I)),
+    ("groceries", re.compile(r"\b(super\s*market|supermarket|kirana|grocery|vegetables|big\s*bazaar|dmart|reliance\s*fresh)\b", re.I)),
+    ("utilities", re.compile(r"\b(electricity|electric|bescom|mseb|water\s*bill|broadband|airtel|jio\s*fiber|mobile\s*recharge|recharge|electricity\s*bill)\b", re.I)),
+    ("entertainment", re.compile(r"\b(cinema|pvr|inox|movie|theatre|netflix|spotify|hotstar)\b", re.I)),
+    ("tickets", re.compile(r"\b(ticket|booking|entry\s*fee|pass)\b", re.I)),
+    ("health", re.compile(r"\b(hospital|clinic|pharmacy|medical|chemist|doctor)\b", re.I)),
+    ("food", re.compile(r"\b(restaurant|hotel|cafe|dhaba|mess|kitchen|biryani|dosa|paneer|roti|naan|pizza|burger|thali|idli|chai|coffee|momos|chicken|veg|sagar)\b", re.I)),
+]
+# Handwriting: amounts written with letter shapes the reader turned into letters.
+DIGIT_FIX = str.maketrans("Oo|lISBZD", "001115820")
 
 
 def to_minor(text: str, exponent: int) -> int | None:
     t = text.lower().replace("₹", "").replace("rs.", "").replace("rs", "").replace("inr", "").replace("−", "-")
+    t = t.translate(DIGIT_FIX)
     t = t.replace(" ", "").replace(",", "")
     neg = t.startswith("-")
     t = t.lstrip("-")
@@ -214,14 +233,21 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
         if (
             out.merchant is None and idx < 4 and re.search(r"[a-zA-Z]{3,}", row)
             and not re.search(r"\d{3,}|\d\.\d", row) and not SKIP_WORDS.search(row) and not TAX_RE.search(row)
-            and not GENERIC_MERCHANT.match(row)
+            and not GENERIC_MERCHANT.match(row) and not AMOUNT_RE.search(row)
         ):
             out.merchant = row.strip()[:80]
             continue
 
         m = AMOUNT_RE.search(row)
-        amount = to_minor(m.group(1), exp) if m else None
-        label = row[: m.start()].strip(" :.-") if m else row
+        amt_text = m.group(1) if m else None
+        if amt_text is not None and "." not in amt_text:
+            # Handwriting: letter-shaped digits ("Samosa 1O0" = 100) cut the match short,
+            # leaving a lonely trailing "0" as the price. Take the whole mixed token.
+            tail = re.search(r"[\dOoIlSBZD]{2,}$", row[: m.end()])
+            if tail and not tail.group(0).isdigit() and any(ch.isdigit() for ch in tail.group(0)):
+                amt_text = tail.group(0)
+        amount = to_minor(amt_text, exp) if amt_text is not None else None
+        label = row[: m.end() - len(amt_text)].strip(" :.-=") if amt_text is not None else row
         # OCR splits words ("NET T OTAL", "DisCOunt"): match keywords on the label without spaces too.
         squashed = re.sub(r"\s+", "", label.lower())
 
@@ -239,7 +265,7 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
         prev_was_item = False
 
         if pending_total and not re.search(r"[a-zA-Z]", label):
-            out.total_minor = _final_total(m.group(1), amount, out.total_minor, exp, prefer=True)
+            out.total_minor = _final_total(amt_text, amount, out.total_minor, exp, prefer=True)
             pending_total = False
             seen_total = True
             continue
@@ -264,7 +290,7 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
         if "after" in squashed:
             continue  # "After Discount 1417.20": the taxable value, not money of its own
         if TOTAL_WORDS.search(low) or TOTAL_WORDS.search(squashed):
-            out.total_minor = _final_total(m.group(1), amount, out.total_minor, exp, prefer="grand" in low or "payable" in low)
+            out.total_minor = _final_total(amt_text, amount, out.total_minor, exp, prefer="grand" in low or "payable" in low)
             seen_total = True
             continue
         if DISCOUNT_WORDS.search(low) or "discount" in squashed:
@@ -278,7 +304,7 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
             seen_total
             or SKIP_WORDS.search(low)
             or not re.search(r"[a-zA-Z]{2,}", label)
-            or (need_decimal and "." not in m.group(1))
+            or (need_decimal and amt_text is not None and "." not in amt_text)
             or re.search(r"\d{7,}", row.replace(" ", ""))  # phone and bill numbers
         ):
             out.unparsed_lines.append(row)
@@ -286,6 +312,46 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
 
         out.items.append(_item_from_row(label, amount, row, exp))
         prev_was_item = True
+
+    # A bill that isn't itemised (auto ride, Uber screenshot, one-line ticket) still has
+    # to become something splittable: one item for the whole bill, named from context.
+    if not out.items:
+        name = None
+        for r in out.unparsed_lines:
+            m = RIDE_WORDS.search(r)
+            if m:
+                word = re.sub(r"\s+", " ", m.group(1).strip().lower())
+                name = {
+                    "uber": "Uber ride",
+                    "ola": "Ola ride",
+                    "rapido": "Rapido ride",
+                    "auto": "Auto ride",
+                    "auto rickshaw": "Auto ride",
+                    "rickshaw": "Auto ride",
+                    "taxi": "Taxi fare",
+                    "cab": "Cab fare",
+                }.get(word)
+                break
+        single = out.total_minor
+        if single is None:
+            # No "Total" printed: if exactly one amount was seen anywhere, that's the bill.
+            money = [to_minor(m.group(1), exp) for r in rows if (m := AMOUNT_RE.search(r)) and to_minor(m.group(1), exp)]
+            money = [abs(x) for x in money if x is not None]
+            if len(set(money)) == 1:
+                single = money[0]
+                out.total_minor = single
+        if single:
+            out.items.append(
+                ParsedItem(name=name or "The whole bill", quantity_milli=1000, unit_price_minor=single,
+                           amount_minor=single, confidence=60, source="whole bill")
+            )
+    # Suggest the app's category chip from whatever words the bill shows.
+    if out.category is None:
+        haystack = " ".join(filter(None, [out.merchant, *out.unparsed_lines, *(i.name for i in out.items)]))
+        for cat, rx in CATEGORY_WORDS:
+            if rx.search(haystack):
+                out.category = cat
+                break
 
     if tax_total and not out.taxes:
         out.taxes.append(ParsedTax("GST", tax_total[1], tax_total[0], tax_total[2]))
@@ -344,6 +410,12 @@ def _item_from_row(label: str, amount: int, row: str, exp: int) -> ParsedItem:
             confidence = 90  # "Lassi  80.00  80.00": rate equals amount, quantity 1
     if not re.search(r"[a-zA-Z]{3,}", name):
         confidence = min(confidence, 40)
+    else:
+        # Handwritten "2 Roti 24": the count before the name, no rate printed.
+        lead = re.match(r"^(\d{1,2})\s+(\D.*)$", name)
+        if lead and (q := small_int(lead.group(1))) and 2 <= q <= 20 and amount % q == 0 and amount // q >= 100:
+            name = lead.group(2).strip()
+            qty_milli, unit, confidence = q * 1000, amount // q, max(confidence, 70)
     return ParsedItem(name=name[:120], quantity_milli=qty_milli, unit_price_minor=unit, amount_minor=amount, confidence=confidence, source=row)
 
 def _check(out: ParsedReceipt) -> None:

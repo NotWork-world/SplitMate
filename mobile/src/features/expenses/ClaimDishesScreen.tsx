@@ -36,7 +36,7 @@ import {
   space,
   useTheme,
 } from '../../design';
-import {formatBp, formatMoney, formatQty, parseBp} from '../../money/currency';
+import {formatBp, formatMoney, formatQty, parseBp, parseQty} from '../../money/currency';
 import type {AppScreen} from '../../navigation/types';
 import {useAppDispatch, useAppSelector} from '../../store';
 import {draftActions, preview} from './draft';
@@ -604,6 +604,15 @@ function ListAlternative({
 
 // ------------------------------------------------------------------ custom split
 
+// Shares are stored in thousandths, so ½ is 500 and 2 is 2000: proportions stay exact
+// and the money engine never needs floats. These are the taps kids (and adults) reach for.
+const QUICK_SHARES: Array<[string, number]> = [
+  ['¼', 250],
+  ['½', 500],
+  ['1', 1000],
+  ['2', 2000],
+];
+
 function CustomSplitSheet({
   item,
   payload,
@@ -621,7 +630,7 @@ function CustomSplitSheet({
 }) {
   const [mode, setMode] = useState<Exclude<Mode, 'equal'>>('shares');
   const [values, setValues] = useState<Record<string, number>>({});
-  const [pctText, setPctText] = useState<Record<string, string>>({});
+  const [texts, setTexts] = useState<Record<string, string>>({});
   const opened = useRef<string | null>(null);
 
   useEffect(() => {
@@ -630,9 +639,13 @@ function CustomSplitSheet({
       const m = item.split_mode === 'equal' ? 'shares' : item.split_mode;
       setMode(m);
       const ids = initialSelection.length ? initialSelection : item.consumers.map(c => c.member_id);
-      const v = Object.fromEntries(ids.map(id => [id, item.consumers.find(c => c.member_id === id)?.value ?? (m === 'shares' ? 1 : 0)]));
+      const v = Object.fromEntries(ids.map(id => [id, item.consumers.find(c => c.member_id === id)?.value ?? (m === 'shares' ? 1000 : 0)]));
       setValues(v);
-      setPctText(m === 'percent' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, formatBp(x).replace('%', '')])) : {});
+      setTexts(
+        Object.fromEntries(
+          Object.entries(v).map(([k, x]) => [k, m === 'shares' ? formatQty(x) : m === 'percent' ? formatBp(x).replace('%', '') : '']),
+        ),
+      );
     }
     if (!item) {
       opened.current = null;
@@ -648,6 +661,22 @@ function CustomSplitSheet({
   const valid =
     ids.length > 0 &&
     (mode === 'shares' ? ids.every(k => values[k] >= 1) : mode === 'percent' ? total === 10000 : total === net);
+
+  const setShare = (id: string, v: number) => {
+    setValues({...values, [id]: v});
+    setTexts({...texts, [id]: formatQty(v)});
+  };
+  const resetFor = (m: Exclude<Mode, 'equal'>) => {
+    setMode(m);
+    setValues(Object.fromEntries(ids.map(k => [k, m === 'shares' ? 1000 : 0])));
+    setTexts({});
+  };
+  // "The rest of it": the count on the bill (8 rotis) minus what's already handed out.
+  const rest = mode === 'shares' && item.quantity_milli > 0 ? item.quantity_milli - total : 0;
+  const nameOf = (id: string) => {
+    const m = members.find(x => x.id === id);
+    return m ? (m.is_me ? 'You' : m.display_name) : '?';
+  };
 
   return (
     <Sheet
@@ -669,11 +698,7 @@ function CustomSplitSheet({
       }>
       <Segmented<Exclude<Mode, 'equal'>>
         value={mode}
-        onChange={m => {
-          setMode(m);
-          setValues(Object.fromEntries(ids.map(k => [k, m === 'shares' ? 1 : 0])));
-          setPctText({});
-        }}
+        onChange={resetFor}
         options={[
           {value: 'shares', label: 'Shares'},
           {value: 'percent', label: 'Percent'},
@@ -682,15 +707,17 @@ function CustomSplitSheet({
       />
       <Text variant="small" tone="muted" style={{marginVertical: space.md}}>
         {mode === 'shares'
-          ? 'E.g. 2 shares for someone who had twice as much.'
+          ? 'How much each person had. Fractions work: ½ for half a roti, 2 for two.'
           : mode === 'percent'
           ? 'Percentages must add up to exactly 100%.'
           : `Amounts must add up to ${formatMoney(net, payload.currency)} (the item after its own discount). Bill discounts and tax are then shared in the same proportion.`}
       </Text>
       {members.map(m => {
         const on = m.id in values;
+        const mine = values[m.id] ?? 0;
+        const mineAmount = on && mode === 'shares' && total > 0 ? Math.round((net * mine) / total) : 0;
         return (
-          <View key={m.id} style={{flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.xs, minHeight: 56}}>
+          <View key={m.id} style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.xs, rowGap: 6, paddingVertical: space.xs, minHeight: 56}}>
             <Pressable
               accessibilityRole="checkbox"
               accessibilityState={{checked: on}}
@@ -699,32 +726,52 @@ function CustomSplitSheet({
                 if (on) {
                   delete next[m.id];
                 } else {
-                  next[m.id] = mode === 'shares' ? 1 : 0;
+                  next[m.id] = mode === 'shares' ? 1000 : 0;
                 }
                 setValues(next);
+                if (mode === 'shares') {
+                  setTexts({...texts, [m.id]: next[m.id] === 1000 ? '1' : ''});
+                }
               }}
-              style={{flexDirection: 'row', alignItems: 'center', gap: space.sm, flex: 1}}>
+              style={{flexDirection: 'row', alignItems: 'center', gap: space.sm, flex: 1, minWidth: 120}}>
               <Avatar name={m.display_name} hue={m.avatar_hue} size={32} selected={on} />
-              <Text variant="bodyStrong" tone={on ? 'default' : 'faint'} numberOfLines={1}>
-                {m.is_me ? 'You' : m.display_name}
-              </Text>
+              <View style={{flex: 1}}>
+                <Text variant="bodyStrong" tone={on ? 'default' : 'faint'} numberOfLines={1}>
+                  {m.is_me ? 'You' : m.display_name}
+                </Text>
+                {on && mode === 'shares' && total > 0 ? (
+                  <Text variant="caption" tone="muted" numberOfLines={1}>
+                    ≈ {formatMoney(mineAmount, payload.currency)}
+                  </Text>
+                ) : null}
+              </View>
             </Pressable>
             {on && mode === 'shares' ? (
-              <TextField
-                containerStyle={{width: 80}}
-                keyboardType="number-pad"
-                value={String(values[m.id] || '')}
-                onChangeText={t => setValues({...values, [m.id]: Math.min(999, Number(t.replace(/\D/g, '')) || 0)})}
-              />
+              <>
+                <TextField
+                  containerStyle={{width: 76}}
+                  keyboardType="decimal-pad"
+                  value={texts[m.id] ?? ''}
+                  onChangeText={t => {
+                    setTexts({...texts, [m.id]: t});
+                    setValues({...values, [m.id]: parseQty(t) ?? 0});
+                  }}
+                />
+                <View style={{flexDirection: 'row', gap: 4}}>
+                  {QUICK_SHARES.map(([label, v]) => (
+                    <Chip key={label} label={label} onPress={() => setShare(m.id, v)} />
+                  ))}
+                </View>
+              </>
             ) : null}
             {on && mode === 'percent' ? (
               <TextField
                 containerStyle={{width: 96}}
                 keyboardType="decimal-pad"
                 suffix="%"
-                value={pctText[m.id] ?? ''}
+                value={texts[m.id] ?? ''}
                 onChangeText={t => {
-                  setPctText({...pctText, [m.id]: t});
+                  setTexts({...texts, [m.id]: t});
                   setValues({...values, [m.id]: parseBp(t) ?? 0});
                 }}
               />
@@ -735,15 +782,34 @@ function CustomSplitSheet({
           </View>
         );
       })}
-      {mode === 'percent' ? (
+      {mode === 'shares' ? (
+        <>
+          <Text variant="smallStrong" tone={valid ? 'positive' : 'warning'} style={{marginTop: space.sm}}>
+            {formatQty(total)} {total === 1000 ? 'share' : 'shares'}
+            {item.quantity_milli > 0 ? ` of ${formatQty(item.quantity_milli)} on the bill` : ''}
+          </Text>
+          {rest > 0 ? (
+            <View style={{marginTop: space.sm}}>
+              <Text variant="caption" tone="muted">
+                Give the rest ({formatQty(rest)}) to:
+              </Text>
+              <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: space.xs, marginTop: space.xs}}>
+                {ids.map(id => (
+                  <Chip key={id} label={nameOf(id)} onPress={() => setShare(id, rest)} />
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </>
+      ) : mode === 'percent' ? (
         <Text variant="smallStrong" tone={total === 10000 ? 'positive' : 'warning'}>
           {formatBp(total)} of 100%
         </Text>
-      ) : mode === 'exact' ? (
+      ) : (
         <Text variant="smallStrong" tone={total === net ? 'positive' : 'warning'}>
           {formatMoney(total, payload.currency)} of {formatMoney(net, payload.currency)}
         </Text>
-      ) : null}
+      )}
     </Sheet>
   );
 }

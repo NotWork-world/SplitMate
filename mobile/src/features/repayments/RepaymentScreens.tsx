@@ -17,6 +17,7 @@ const ACTION_COPY: Record<RepaymentActionName, {label: string; variant: 'primary
   reject: {label: 'Not received', variant: 'danger', confirm: 'Reject this payment? Balances stay unchanged.'},
   cancel: {label: 'Cancel', variant: 'secondary', confirm: 'Cancel this repayment? Balances stay unchanged.'},
   resubmit: {label: 'Send again with details', variant: 'primary', needsNote: true, confirm: 'Ask them to check again?'},
+  revert: {label: 'I never actually got this', variant: 'danger', needsNote: true, confirm: 'Take back this confirmation? The balance is restored — the payment goes back to awaiting them. Use this only if the money never really arrived.'},
 };
 
 export function RepaymentDetailScreen({route}: AppScreen<'RepaymentDetail'>) {
@@ -36,7 +37,7 @@ export function RepaymentDetailScreen({route}: AppScreen<'RepaymentDetail'>) {
     <Screen header={<Header title="Repayment" />} refreshing={q.isFetching && !q.isLoading} onRefresh={q.refetch}>
       <QueryView query={q}>
         {r => {
-          const tone = r.status === 'CONFIRMED' ? 'positive' : r.status === 'REJECTED' || r.status === 'DISPUTED' ? 'negative' : 'warning';
+          const tone = r.status === 'CONFIRMED' ? 'positive' : r.status === 'REJECTED' || r.status === 'DISPUTED' || r.status === 'REVERTED' ? 'negative' : 'warning';
           return (
             <>
               <Card strong style={{alignItems: 'center', paddingVertical: space.xl}}>

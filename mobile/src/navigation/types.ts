@@ -34,7 +34,7 @@ export type AppParams = {
   Settings: undefined;
   EditProfile: undefined;
   Privacy: undefined;
-  ReceiptScan: {localId: string};
+  ReceiptScan: {localId?: string};
 };
 
 export type AppScreen<T extends keyof AppParams> = NativeStackScreenProps<AppParams, T>;
