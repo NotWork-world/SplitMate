@@ -36,3 +36,9 @@ coverage/
 
 # local working notes
 prompt.md
+
+# release artifacts and local build logs (kept out of the repo)
+SplitMate-*.apk
+build_log.txt
+build_log_err.txt
+*.png.tmp
