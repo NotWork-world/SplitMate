@@ -10,6 +10,7 @@ items get a low confidence so the review screen highlights them.
 from __future__ import annotations
 
 import re
+import statistics
 from dataclasses import asdict, dataclass, field
 from datetime import date
 
@@ -89,13 +90,13 @@ TOTAL_WORDS = re.compile(
 )
 SUBTOTAL_WORDS = re.compile(r"\b(sub\s*-?\s*total|item\s*total|gross\s*(amount|total))\b|^\s*(total\s*)?items?\s*:", re.I)
 SKIP_WORDS = re.compile(
-    r"\b(gstin|fssai|invoice|bill\s*(no|#)|table|cashier|server|steward|user|phone|ph\.?|tel|mob|mobile|thank|visit|cover|pax|kot|order\s*no|hsn|sac|cin|pan|qty)\b|^\W*bill\s*:",
+    r"\b(gstin|fssai|invoice|bill\s*(no|#)|table|cashier|server|steward|user|phone|ph\.?|tel|mob|mobile|thank|visit|cover|pax|kot|order\s*no|hsn|sac|cin|pan|qty)\b|^\W*bill\s*:|^\s*items?\b",
     re.I,
 )
 # "C GST", "S GST" (OCR splits the letter off) are CGST and SGST.
 TAX_RE = re.compile(r"\b(c\s?gst|s\s?gst|ut\s?gst|i\s?gst|gst|vat)\b", re.I)
 # Printed quantity units after the quantity column ("PANEER DOSA  4  POR  680.00").
-UNIT_WORDS = re.compile(r"(?:\s+(?:por|pors|pcs|pc|nos|no|plt|plate|btl|bottle|kg|kgs|gm|gms|ml|ltr|unit|units|each|ea))\.?\s*$", re.I)
+UNIT_WORDS = re.compile(r"(?:\s+(?:por|pors|pcs|pc|nos|no|plt|plate|btl|bottle|kg|kgs|gm|gms|ml|ltr|unit|units|each|ea|gls|glass|glasses))\.?\s*$", re.I)
 # GST rates in use (and their CGST/SGST halves), to read "2.58" where OCR took % for an 8.
 GST_RATES_BP = {10, 25, 50, 75, 125, 150, 250, 300, 500, 600, 900, 1200, 1400, 1800, 2800}
 GENERIC_MERCHANT = re.compile(r"^\W*(restaurant|hotel|cafe|dhaba|bar|tax\s*invoice|invoice|bill|receipt|estimate|welcome)\W*$", re.I)
@@ -128,6 +129,7 @@ def to_minor(text: str, exponent: int) -> int | None:
     t = text.lower().replace("₹", "").replace("rs.", "").replace("rs", "").replace("inr", "").replace("−", "-")
     t = t.translate(DIGIT_FIX)
     t = t.replace(" ", "").replace(",", "")
+    t = re.sub(r"\.{2,}", ".", t)  # "983..50" is 983.50
     neg = t.startswith("-")
     t = t.lstrip("-")
     m = re.fullmatch(r"(\d+)(?:\.(\d{1,3}))?", t)
@@ -149,25 +151,48 @@ def _pct_bp(text: str) -> int | None:
 
 
 def rows_from_lines(lines: list[OcrLine]) -> list[str]:
-    """Join text fragments that sit on the same printed row (ML Kit often splits columns)."""
+    """Join text fragments that sit on the same printed row (the reader splits columns).
+
+    A photo is rarely perfectly level, so printed rows tilt and the amount
+    column slips out of its item's row. First estimate the page skew from the
+    box centres (same-row pairs far apart horizontally share one slope, noise
+    pairs scatter), then group by the de-skewed centre line."""
     if not lines:
         return []
     if all(line.height == 0 for line in lines):
         return [line.text.strip() for line in lines if line.text.strip()]
-    ordered = sorted(lines, key=lambda line: (line.top + line.height / 2, line.left))
-    rows: list[list[OcrLine]] = []
-    for line in ordered:
-        cy = line.top + line.height / 2
+    centers = [(line.left + line.width / 2, line.top + line.height / 2, line.height) for line in lines]
+    heights = sorted(c[2] for c in centers)
+    med_h = heights[len(heights) // 2]
+    min_dx = max(40.0, 2.5 * med_h)
+    bins: dict[float, list[float]] = {}
+    for i in range(len(centers)):
+        for j in range(i + 1, len(centers)):
+            dx = centers[j][0] - centers[i][0]
+            if abs(dx) < min_dx:
+                continue
+            s = (centers[j][1] - centers[i][1]) / dx
+            if abs(s) > 0.35:
+                continue  # a sideways photo is EXIF's job, not ours
+            bins.setdefault(round(s * 50) / 50, []).append(s)
+    best = max(bins.values(), key=len) if bins else []
+    slope = statistics.median(best) if len(best) >= 5 else 0.0
+    ordered = sorted(
+        ((line, cy - slope * cx, cx) for line, (cx, cy, _) in zip(lines, centers)),
+        key=lambda t: t[1],
+    )
+    rows: list[list[tuple[OcrLine, float, float]]] = []
+    for line, y, cx in ordered:
         if rows:
             last = rows[-1]
-            ref = sum(item.top + item.height / 2 for item in last) / len(last)
-            tol = max(6.0, min(item.height for item in last) * 0.55)
-            if abs(cy - ref) <= tol:
-                last.append(line)
+            ref = sum(v[1] for v in last) / len(last)
+            row_h = sorted(v[0].height for v in last)[len(last) // 2]
+            tol = max(6.0, min(line.height, row_h) * 0.6)
+            if abs(y - ref) <= tol:
+                last.append((line, y, cx))
                 continue
-        rows.append([line])
-    return ["  ".join(p.text.strip() for p in sorted(r, key=lambda x: x.left)).strip() for r in rows]
-
+        rows.append([(line, y, cx)])
+    return ["  ".join(p[0].text.strip() for p in sorted(r, key=lambda x: x[2])).strip() for r in rows]
 
 def _tax_rate_bp(label: str) -> int | None:
     """Rate on a tax line; also reads "2.58" / "98" as 2.5% / 9% when OCR took the % sign for an 8."""
@@ -210,6 +235,8 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
     cur = get_currency(currency)
     exp = cur.exponent
     rows = rows_from_lines(lines)
+    # Glare doubles a decimal point ("983..50"): collapse before any amount is read.
+    rows = [re.sub(r"\.{2,}", ".", r) for r in rows]
     out = ParsedReceipt(currency=cur.code)
     seen_total = False
     prev_was_item = False  # a words-only row right after an item continues its name
@@ -335,8 +362,17 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
         single = out.total_minor
         if single is None:
             # No "Total" printed: if exactly one amount was seen anywhere, that's the bill.
-            money = [to_minor(m.group(1), exp) for r in rows if (m := AMOUNT_RE.search(r)) and to_minor(m.group(1), exp)]
-            money = [abs(x) for x in money if x is not None]
+            money = []
+            for r in rows:
+                m = AMOUNT_RE.search(r)
+                if not m:
+                    continue
+                v = to_minor(m.group(1), exp)
+                if v is None:
+                    continue
+                if m.start() > 0 and r[m.start() - 1].isalnum():
+                    continue  # glued to a code like "E0013": not money
+                money.append(abs(v))
             if len(set(money)) == 1:
                 single = money[0]
                 out.total_minor = single
@@ -355,6 +391,16 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
 
     if tax_total and not out.taxes:
         out.taxes.append(ParsedTax("GST", tax_total[1], tax_total[0], tax_total[2]))
+    gst_pair = [t for t in out.taxes if t.component == "GST"]
+    if (
+        len(gst_pair) == 2
+        and gst_pair[0].amount_minor == gst_pair[1].amount_minor
+        and gst_pair[0].rate_bp == gst_pair[1].rate_bp
+    ):
+        # "C GST" / "S GST" with the C or S lost to OCR: two identical GST
+        # lines at the same rate are the CGST/SGST pair on an Indian bill.
+        gst_pair[0].component = "CGST"
+        gst_pair[1].component = "SGST"
     # One half misread: CGST and SGST always share a rate.
     rates = {t.component: t.rate_bp for t in out.taxes if t.rate_bp}
     for t in out.taxes:

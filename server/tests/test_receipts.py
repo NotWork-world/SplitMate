@@ -221,3 +221,57 @@ def test_auto_rickshaw_and_uber_bills_become_one_item():
     assert uber.category == "transport"
     assert [(i.name, i.amount_minor, i.confidence) for i in uber.items] == [("The whole bill", 24567, 60)]
     assert uber.total_minor == 24567
+
+
+def test_real_phone_photo_through_uniocr():
+    """The full loop on a real customer photo: a portrait bill saved sideways
+    (EXIF 6), tilted, dim, two columns. These are the exact lines UniOCR read
+    on-device after the EXIF fix; the parser must build the whole bill."""
+    import json
+    from pathlib import Path
+
+    raw = json.loads((Path(__file__).parent / "fixtures" / "ocr_royal_cuisine_uniocr.json").read_text(encoding="utf-8"))
+    keep = ("text", "left", "top", "width", "height")
+    r = parse_receipt([OcrLine(**{k: d[k] for k in keep}) for d in raw])  # the endpoint drops 'score'
+    assert r.merchant == "ROYAL CUISINE AND BAKERS"
+    assert r.date == "2026-11-02" and r.category == "food"
+    got = [(i.name, i.quantity_milli // 1000, i.unit_price_minor, i.amount_minor) for i in r.items]
+    assert got == [
+        ("cheese Paneer Dosa", 1, 18000, 18000),
+        ("TANDOORI PANEER PIZZA", 1, 18000, 18000),
+        ("VEGETABLE PAKODA", 1, 15000, 15000),
+        ("BUTTER ROTI", 6, 3000, 18000),
+        ("TAWA FANEER MASALA", 1, 31900, 31900),
+        ("CLEAR MINERAL WATER", 1, 3000, 3000),
+    ]
+    assert r.subtotal_minor == 103900 and sum(i.amount_minor for i in r.items) == 103900
+    assert [(d.amount_minor, d.rate_bp) for d in r.discounts] == [(10090, 1000)]
+    assert [(t.component, t.rate_bp, t.amount_minor) for t in r.taxes] == [("CGST", 250, 2342), ("SGST", 250, 2342)]
+    assert r.round_off_minor == 50 and r.total_minor == 98400
+    assert r.warnings == []
+
+
+def test_tilted_photo_rows_stay_together():
+    """A page tilted a few degrees must not split each row into its columns."""
+    box = lambda text, col, row: OcrLine(
+        text=text,
+        left=10 + col * 145,
+        top=100 + row * 40 - 0.08 * (10 + col * 145),
+        width=30,
+        height=20,
+    )
+    grid = [box(f"r{r}c{c}", c, r) for r in range(4) for c in range(3)]
+    assert rows_from_lines(grid) == [f"r{r}c0  r{r}c1  r{r}c2" for r in range(4)]
+
+
+def test_doubled_decimal_point_is_repaired():
+    """Glare makes the reader print "983..50": still the total, not a lost one."""
+    r = parse_receipt(lines("NET TOTAL 983..50", "Payable Amt. 984.00"))
+    assert r.total_minor == 98400
+
+
+def test_order_codes_are_not_money():
+    """"E0008,E0009,E0013" must not become "The whole bill 13.00"."""
+    r = parse_receipt(lines("Orders:", "E0008,E0009,E0013"))
+    assert r.items == [] and r.total_minor is None
+    assert "No items could be read" in " ".join(r.warnings)

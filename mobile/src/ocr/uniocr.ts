@@ -6,11 +6,10 @@
 import JSZip from 'jszip';
 import RNFS from 'react-native-fs';
 import {InferenceSession, Tensor} from 'onnxruntime-react-native';
-import jpeg from 'jpeg-js';
-import UPNG from 'upng-js';
 import {Buffer} from 'buffer';
 
 import {base64ToBytes, bytesToBase64, vocabFromOnnx} from './package';
+import {decodeImage} from './decode';
 import {cloneImage, cropPerspective, rotate180, rotate90ccw, resizeImage, toChwNormalized, stripToRecInput, type Point, type RgbaImage} from './imageops';
 import {dbBoxes, DB_DEFAULTS} from './dbpostprocess';
 import {ctcDecode, readingOrder} from './ctc';
@@ -47,24 +46,7 @@ interface Engine {
 
 let enginePromise: Promise<Engine> | null = null;
 
-/** Decode a photo (JPEG or PNG, sniffed by magic bytes) into RGBA. */
-export function decodeImage(bytes: Uint8Array): RgbaImage {
-  if (bytes.length < 8) {
-    throw new Error('empty image');
-  }
-  if (bytes[0] === 0xff && bytes[1] === 0xd8) {
-    const decoded = jpeg.decode(bytes as unknown as Buffer, {useTArray: true, tolerantDecoding: true, formatAsRGBA: true});
-    return {width: decoded.width, height: decoded.height, data: decoded.data as unknown as Uint8Array};
-  }
-  if (bytes[0] === 0x89 && bytes[1] === 0x50) {
-    const png = UPNG.decode(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
-    const rgba = UPNG.toRGBA8(png)[0];
-    return {width: png.width, height: png.height, data: new Uint8Array(rgba)};
-  }
-  throw new Error('unsupported image');
-}
-
-async function loadEngine(): Promise<Engine> {
+/** Read every text line of a photo, offline, in reading order. */async function loadEngine(): Promise<Engine> {
   if (typeof (globalThis as any).Buffer === 'undefined') {
     (globalThis as any).Buffer = Buffer; // jpeg-js reads bytes through Node's Buffer
   }

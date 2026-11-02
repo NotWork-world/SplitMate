@@ -42,3 +42,6 @@ SplitMate-*.apk
 build_log.txt
 build_log_err.txt
 *.png.tmp
+
+# the person's own photos sent for debugging
+attachments/

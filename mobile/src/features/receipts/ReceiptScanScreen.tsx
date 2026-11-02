@@ -121,7 +121,10 @@ export function ReceiptScanScreen({route, navigation}: AppScreen<'ReceiptScan'>)
   };
 
   const pick = async (camera: boolean) => {
-    const opts = {mediaType: 'photo' as const, quality: 0.8 as const, maxWidth: 2000, maxHeight: 2000, saveToPhotos: false};
+    // No quality/maxWidth: the picker would re-encode the photo and drop the
+    // EXIF turn flag (and detail). The original file comes through and the
+    // OCR decoder applies EXIF and caps the size itself.
+    const opts = {mediaType: 'photo' as const, saveToPhotos: false};
     const res = camera ? await launchCamera(opts) : await launchImageLibrary({...opts, selectionLimit: 1});
     if (res.didCancel) {
       return;

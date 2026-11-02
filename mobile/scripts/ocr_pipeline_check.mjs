@@ -6,7 +6,7 @@
  * Run:  node scripts/ocr_pipeline_check.mjs <image>
  */
 
-import {readFileSync} from 'fs';
+import {readFileSync, writeFileSync} from 'fs';
 import {join} from 'path';
 import {pathToFileURL} from 'url';
 import {execFileSync} from 'child_process';
@@ -26,6 +26,9 @@ execFileSync(
     'node_modules/typescript/bin/tsc',
     'src/ocr/package.ts',
     'src/ocr/utf8.ts',
+    'src/ocr/exif.ts',
+    'src/ocr/decode.ts',
+    'src/types/shims.d.ts',
     'src/ocr/imageops.ts',
     'src/ocr/dbpostprocess.ts',
     'src/ocr/ctc.ts',
@@ -47,6 +50,7 @@ execFileSync(
 );
 
 const {vocabFromOnnx} = await import(pathToFileURL(join(TMP, 'package.js')).href);
+const {decodeImage} = await import(pathToFileURL(join(TMP, 'decode.js')).href);
 const {resizeImage, toChwNormalized, cropPerspective, stripToRecInput, rotate180, rotate90ccw} = await import(pathToFileURL(join(TMP, 'imageops.js')).href);
 const {dbBoxes, DB_DEFAULTS} = await import(pathToFileURL(join(TMP, 'dbpostprocess.js')).href);
 const {ctcDecode, readingOrder} = await import(pathToFileURL(join(TMP, 'ctc.js')).href);
@@ -59,10 +63,8 @@ const image = process.argv[2] ?? join(ROOT, 'scripts/ocr_test_output/handwritten
 console.log('image:', image);
 
 const bytes = new Uint8Array(readFileSync(image));
-const png = UPNG.decode(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-const rgba = new Uint8Array(UPNG.toRGBA8(png)[0]);
-const img = {width: png.width, height: png.height, data: rgba};
-console.log('decoded', img.width, 'x', img.height);
+const img = decodeImage(bytes);
+console.log('decoded', img.width, 'x', img.height, '(EXIF applied, capped)');
 
 const zip = await JSZip.loadAsync(new Uint8Array(readFileSync(BIN)));
 const detBytes = await zip.file('PP-OCRv6_det_small.onnx').async('uint8array');
@@ -150,7 +152,13 @@ for (const b of boxes) {
 }
 
 console.log('\n--- reading order ---');
-for (const l of readingOrder(lines)) {
-  console.log(`  ${l.score.toFixed(2)}  ${JSON.stringify(l.text) || '(dropped)'}`);
+const ordered = readingOrder(lines.filter(l => l.text.trim().length > 0)); // the app sends non-empty only
+for (const l of ordered) {
+  console.log(`  ${l.score.toFixed(2)}  ${JSON.stringify(l.text)}`);
 }
+// Same payload the phone sends the server, so the Python parser can be run on it.
+writeFileSync(join(ROOT, '.ocr-check', 'lines.json'), JSON.stringify(ordered.map(l => ({
+  text: l.text, left: Math.round(l.left), top: Math.round(l.top),
+  width: Math.round(l.width), height: Math.round(l.height), score: l.score,
+}))));
 console.log('total', ((Date.now() - t0) / 1000).toFixed(2) + 's');
