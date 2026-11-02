@@ -25,6 +25,7 @@ execFileSync(
   [
     'node_modules/typescript/bin/tsc',
     'src/ocr/package.ts',
+    'src/ocr/utf8.ts',
     'src/ocr/imageops.ts',
     'src/ocr/dbpostprocess.ts',
     'src/ocr/ctc.ts',

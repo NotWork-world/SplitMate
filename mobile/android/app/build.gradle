@@ -161,6 +161,20 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }
+
+    // One APK per phone CPU. A phone only ever loads one ABI, so shipping all four
+    // more than doubles the download for no benefit (278MB universal vs ~a third each).
+    // The native code for every ABI is still built and cached; this only filters what
+    // goes into the APK. Build with -PkeepAbi=armeabi-v7a (or x86_64 for the emulator);
+    // the default, arm64-v8a, is every modern phone.
+    packaging {
+        jniLibs {
+            def keep = (project.findProperty('keepAbi') ?: 'arm64-v8a')
+            excludes += ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']
+                .findAll { it != keep }
+                .collect { "lib/${it}/**" }
+        }
+    }
 }
 
 dependencies {

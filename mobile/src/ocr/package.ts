@@ -71,7 +71,9 @@ function skipField(bytes: Uint8Array, pos: number, wireType: number): number {
   throw new Error(`unsupported protobuf wire type ${wireType}`);
 }
 
-const UTF8 = new TextDecoder('utf-8');
+import {utf8Decode} from './utf8';
+
+const UTF8 = {decode: utf8Decode}; // Hermes has no TextDecoder; decode by hand
 const PROTO_LEN = 2;
 
 /**

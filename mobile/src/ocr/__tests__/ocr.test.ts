@@ -3,6 +3,7 @@ import {readFileSync} from 'fs';
 import {join} from 'path';
 
 import {base64ToBytes, onnxMetadata, vocabFromOnnx} from '../package';
+import {utf8Decode} from '../utf8';
 import {ctcDecode, readingOrder} from '../ctc';
 import {connectedComponents, dbBoxes, minAreaRect, rectCorners, unclipRect} from '../dbpostprocess';
 import {cropPerspective, resizeImage, rotate180, stripToRecInput, toChwNormalized, type Point, type RgbaImage} from '../imageops';
@@ -31,6 +32,34 @@ describe('base64ToBytes', () => {
     expect(Buffer.from(base64ToBytes('a-G_v8=')).toString()).toBe(Buffer.from(base64ToBytes('a+G/v8=')).toString());
     expect(base64ToBytes('////').length).toBe(3);
   });
+});
+
+describe('utf8Decode (Hermes has no TextDecoder)', () => {
+  const nodeDecoder = new TextDecoder('utf-8');
+  const bytesOf = (s: string) => new Uint8Array(Buffer.from(s, 'utf8'));
+
+  it('round-trips ASCII, rupees and emoji exactly like TextDecoder', () => {
+    for (const s of ['SplitMate', 'roti \u20b912 \u00bdlah', '\u0930\u094b\u091f\u0940', 'emoji \ud83d\udec5!', '\u00bd + \u00bc']) {
+      expect(utf8Decode(bytesOf(s))).toBe(s);
+      expect(utf8Decode(bytesOf(s))).toBe(nodeDecoder.decode(bytesOf(s)));
+    }
+  });
+
+  it('survives malformed bytes without throwing', () => {
+    const broken = new Uint8Array([0xff, 0x41, 0xc2, 0x41, 0xf0, 0x41]);
+    expect(() => utf8Decode(broken)).not.toThrow();
+    expect(utf8Decode(broken)).toContain('A');
+  });
+
+  it('matches TextDecoder on the real 18k-character vocab bytes', async () => {
+    const zip = await JSZip.loadAsync(new Uint8Array(readFileSync(BIN)));
+    const rec = await zip.file('PP-OCRv6_rec_small.onnx')!.async('uint8array');
+    const raw = onnxMetadata(rec)['character'];
+    const rawBytes = bytesOf(raw);
+    expect(utf8Decode(rawBytes)).toBe(raw);
+    expect(utf8Decode(rawBytes)).toBe(nodeDecoder.decode(rawBytes));
+    expect(utf8Decode(rawBytes).length).toBeGreaterThan(18000);
+  }, 30000);
 });
 
 describe('the real uniocr package', () => {
