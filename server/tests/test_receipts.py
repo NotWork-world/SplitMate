@@ -168,12 +168,13 @@ def test_real_restaurant_bill_from_phone_ocr():
     raw = json.loads((Path(__file__).parent / "fixtures" / "ocr_royal_cuisine.json").read_text(encoding="utf-8"))
     r = parse_receipt([OcrLine(**d) for d in raw])
     got = [(i.name, i.quantity_milli // 1000, i.unit_price_minor, i.amount_minor) for i in r.items]
+    # The names are repaired against the dish dictionary; the raw row stays in source.
     assert got == [
-        ("PANE ER MASAILA DOSA", 4, 17000, 68000),
-        ("PANEER TIKKA BIRYANI", 1, 39900, 39900),
-        ("STUEEED PARATHA", 2, 9000, 18000),
-        ("HONE Y CHII.IY POTATO", 1, 24900, 24900),
-        ("CLEAR MINERAL VIATER", 2, 3000, 6000),
+        ("Paneer Masala Dosa", 4, 17000, 68000),
+        ("Paneer Tikka Biryani", 1, 39900, 39900),
+        ("Stuffed Paratha", 2, 9000, 18000),
+        ("Honey Chilli Potato", 1, 24900, 24900),
+        ("Clear Mineral Water", 2, 3000, 6000),
     ]
     assert r.subtotal_minor == 156800 and sum(i.amount_minor for i in r.items) == 156800
     assert [(d.amount_minor, d.rate_bp) for d in r.discounts] == [(15080, 1000)]
@@ -237,12 +238,12 @@ def test_real_phone_photo_through_uniocr():
     assert r.date == "2026-11-02" and r.category == "food"
     got = [(i.name, i.quantity_milli // 1000, i.unit_price_minor, i.amount_minor) for i in r.items]
     assert got == [
-        ("cheese Paneer Dosa", 1, 18000, 18000),
-        ("TANDOORI PANEER PIZZA", 1, 18000, 18000),
-        ("VEGETABLE PAKODA", 1, 15000, 15000),
-        ("BUTTER ROTI", 6, 3000, 18000),
-        ("TAWA FANEER MASALA", 1, 31900, 31900),
-        ("CLEAR MINERAL WATER", 1, 3000, 3000),
+        ("Cheese Paneer Dosa", 1, 18000, 18000),
+        ("Tandoori Paneer Pizza", 1, 18000, 18000),
+        ("Vegetable Pakoda", 1, 15000, 15000),
+        ("Butter Roti", 6, 3000, 18000),
+        ("Tawa Paneer Masala", 1, 31900, 31900),
+        ("Clear Mineral Water", 1, 3000, 3000),
     ]
     assert r.subtotal_minor == 103900 and sum(i.amount_minor for i in r.items) == 103900
     assert [(d.amount_minor, d.rate_bp) for d in r.discounts] == [(10090, 1000)]
@@ -275,3 +276,26 @@ def test_order_codes_are_not_money():
     r = parse_receipt(lines("Orders:", "E0008,E0009,E0013"))
     assert r.items == [] and r.total_minor is None
     assert "No items could be read" in " ".join(r.warnings)
+
+
+def test_dish_name_repair():
+    """One letter misread, a split word, doubled letters, a misread V/W, stray
+    punctuation -- all real OCR mistakes from photographed bills."""
+    from app.integrations.receipt_parser import repair_item_name
+
+    assert repair_item_name("TAWA FANEER MASALA") == "Tawa Paneer Masala"
+    assert repair_item_name("PANE ER MASAILA DOSA") == "Paneer Masala Dosa"
+    assert repair_item_name("STUEEED PARATHA") == "Stuffed Paratha"
+    assert repair_item_name("CLEAR MINERAL VIATER") == "Clear Mineral Water"
+    assert repair_item_name("HONEY CHII.IY POTATO") == "Honey Chilli Potato"
+    assert repair_item_name("DAL AND FRY") == "Dal and Fry"  # connector stays small
+
+
+def test_dish_name_repair_keeps_the_unknown_as_printed():
+    """Never guess on a word the dictionary doesn't recognise; the person sees
+    exactly what was printed and can fix it on the review screen."""
+    from app.integrations.receipt_parser import repair_item_name
+
+    assert repair_item_name("XYZQQ Special") == "XYZQQ Special"
+    assert repair_item_name("7UP Maggi Masala") == "7UP Maggi Masala"
+    assert repair_item_name("Paneer Tikka Biryani") == "Paneer Tikka Biryani"  # already good

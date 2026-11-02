@@ -381,6 +381,13 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
                 ParsedItem(name=name or "The whole bill", quantity_milli=1000, unit_price_minor=single,
                            amount_minor=single, confidence=60, source="whole bill")
             )
+    # Repair OCR spelling in item names ("TAWA FANEER MASALA" -> "Tawa Paneer
+    # Masala"); numbers are never touched, and the raw line stays in source.
+    # Names SplitMate itself made up ("The whole bill", "Uber ride") are fine.
+    for item in out.items:
+        if item.source != "whole bill":
+            item.name = repair_item_name(item.name)
+
     # Suggest the app's category chip from whatever words the bill shows.
     if out.category is None:
         haystack = " ".join(filter(None, [out.merchant, *out.unparsed_lines, *(i.name for i in out.items)]))
@@ -408,6 +415,131 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
             t.rate_bp = rates.get("SGST" if t.component == "CGST" else "CGST")
     _check(out)
     return out
+
+
+# ---------------------------------------------------------------- name repair
+# Words that really appear on bills (Indian menus, rides, fuel). OCR misreads a
+# letter now and then (PANEER -> FANEER, WATER -> VIATER, STUFFED -> STUEEED):
+# a name is repaired against this dictionary by edit distance. No word matches:
+# it stays exactly as printed, for the person to see on the review screen.
+DISH_WORDS = frozenset("""
+aalu achar aloo and auto baati basmati bhatura bhindi biryani bisleri
+bowl burger butter buttermilk
+cab chai cheese chilli chole chowmein chutney coffee cola combo
+curd curry clear
+dal dosa dosai double egg eggs
+fare french fries fry fuel full
+gajar ghee gobi golgappa gravy green gulab
+handi halwa half honey hot
+ice idli idly iced jamun jalebi jeera juice
+ka kabab kebab ke kheer kulcha kulfi kofta korma
+lassi lemon lentil litre liter litchi
+maggi malai makhani manchurian masala medium meals methi milk mineral momo momos
+mughlai mutton mutter
+naan noodle noodles
+ola oil omlette omelette onion
+pakoda pakoda pakora paneer papad papadum parantha paratha pasta patty
+pickle plain pizza pohe poha poori potato pulao pulav punjabi petrol
+raita rabdi rasam rice ride roll rolls roti
+sabzi sambar samosa sandwich schezwan shake shikanji shorba singhada soup
+special spring stuffed sweet
+tandoori tawa taxi thali tikka toast tomato toll train tandoor
+uber upma uttapam
+vada vadai veg vegetable chicken fish prawn salad
+water wheat white with
+yogurt
+""".split())
+
+_CONNECTORS = frozenset("and or with ka ki ke in no the".split())
+
+
+def _collapse(word: str) -> str:
+    """STUEEED -> stued: runs of a repeated letter become one, because the
+    recognizer both drops and doubles letters on low-contrast print."""
+    return re.sub(r"(.)\1+", r"\1", word)
+
+
+# Letter pairs the reader commonly swaps (same shape at bill print sizes).
+_CONFUSE_PAIRS = {
+    frozenset("vw"), frozenset("uv"), frozenset("un"), frozenset("ou"), frozenset("oa"),
+    frozenset("oe"), frozenset("ce"), frozenset("il"), frozenset("it"), frozenset("if"),
+    frozenset("mn"), frozenset("hn"), frozenset("bd"), frozenset("bp"), frozenset("pq"),
+    frozenset("gq"), frozenset("sz"), frozenset("kx"), frozenset("rn"),
+}
+
+
+def _lev(a: str, b: str, cap: int) -> int:
+    """Edit distance with OCR costs: a visually-confused letter swap costs 1,
+    any other swap 2, insert/delete 2. Bails out past cap. So VIATER->water
+    (v/w swap) beats VIATER->liter."""
+    if abs(len(a) - len(b)) * 2 > cap:
+        return cap + 1
+    prev = list(range(0, len(b) * 2 + 1, 2))
+    for i, ca in enumerate(a, 1):
+        cur = [i * 2]
+        for j, cb in enumerate(b, 1):
+            swap = 0 if ca == cb else (1 if frozenset((ca, cb)) in _CONFUSE_PAIRS else 2)
+            cur.append(min(prev[j] + 2, cur[j - 1] + 2, prev[j - 1] + swap))
+        if min(cur) > cap:
+            return cap + 1
+        prev = cur
+    return prev[-1]
+
+
+def _repair_word(word: str) -> str | None:
+    """The dictionary word this printed word was meant to be, or None to keep
+    it as printed. Ambiguous (two candidates tie) also keeps the original."""
+    core = word.strip(".,()-'&").lower()
+    bare = re.sub(r"[^a-z]", "", core)
+    if bare and len(bare) < len(core):
+        core = bare  # stray punctuation inside the word ("CHII.IY")
+    if not core.isalpha() or len(core) < 3:
+        return None
+    if core in _CONNECTORS:
+        return core
+    if core in DISH_WORDS:
+        return core
+    limit = 2 if len(core) <= 4 else 4
+    scored = [(d, c) for c in DISH_WORDS if (d := _lev(core, c, limit)) <= limit]
+    if scored:
+        scored.sort()
+        winners = [c for d, c in scored if d == scored[0][0]]
+        if len(winners) == 1:
+            return winners[0]
+    if len(core) >= 5:
+        # doubled/dropped letters: compare with runs collapsed (stueed ~ stuffed)
+        col = _collapse(core)
+        scored = [(d, c) for c in DISH_WORDS if (d := _lev(col, _collapse(c), 2)) <= 2]
+        if scored:
+            scored.sort()
+            winners = [c for d, c in scored if d == scored[0][0]]
+            if len(winners) == 1:
+                return winners[0]
+    return None
+
+
+def repair_item_name(name: str) -> str:
+    """Fix OCR spelling in a dish name and make it read like a name, not a
+    shout. Unknown words stay exactly as printed; numbers are never touched."""
+    words = name.split()
+    out: list[str] = []
+    i = 0
+    while i < len(words):
+        w = words[i]
+        # Two fragments that only make sense glued ("PANE ER" -> Paneer).
+        if i + 1 < len(words):
+            joined = (w.strip(".,()-") + words[i + 1].strip(".,()-")).lower()
+            if joined.isalpha() and joined in DISH_WORDS:
+                out.append(joined.capitalize())
+                i += 2
+                continue
+        fixed = _repair_word(w)
+        if fixed is not None:
+            out.append(fixed if fixed in _CONNECTORS else fixed.capitalize())
+        else:
+            out.append(w)
+        i += 1
+    return " ".join(out)
 
 
 def _is_name_part(row: str) -> bool:
