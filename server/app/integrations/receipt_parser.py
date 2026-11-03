@@ -76,7 +76,7 @@ class ParsedReceipt:
 
 # ------------------------------------------------------------------ helpers
 
-_AMOUNT = r"[-−]?(?:₹|rs\.?|inr)?\s*\d{1,3}(?:[,\s]\d{2,3})*(?:\.\d{1,2})|[-−]?(?:₹|rs\.?|inr)?\s*\d+(?:\.\d{1,2})?"
+_AMOUNT = r"(?<![\d.,])[-−]?(?:₹|rs\.?|inr)?\s*\d{1,3}(?:[,\s]\d{2,3})*(?:\.\d{1,2})|(?<![\d.,])[-−]?(?:₹|rs\.?|inr)?\s*\d+(?:\.\d{1,2})?"
 AMOUNT_RE = re.compile(rf"({_AMOUNT})\s*$", re.I)
 PCT_RE = re.compile(r"(\d{1,2}(?:\.\d{1,2})?)\s*%")
 DATE_RES = [
@@ -90,7 +90,7 @@ TOTAL_WORDS = re.compile(
 )
 SUBTOTAL_WORDS = re.compile(r"\b(sub\s*-?\s*total|item\s*total|gross\s*(amount|total))\b|^\s*(total\s*)?items?\s*:", re.I)
 SKIP_WORDS = re.compile(
-    r"\b(gstin|fssai|invoice|bill\s*(no|#)|table|cashier|server|steward|user|phone|ph\.?|tel|mob|mobile|thank|visit|cover|pax|kot|order\s*no|hsn|sac|cin|pan|qty)\b|^\W*bill\s*:|^\s*items?\b",
+    r"\b(gstin|fssai|invoice|bill\s*(no|#)|table|cashier|server|steward|user|phone|ph\.?|tel|mob|mobile|thank|visit|cover|pax|kot|order\s*no|hsn|sac|cin|pan|qty|token\s*(?:no\.?|num\.?|#))\b|^\W*bill\s*:|^\s*items?\b",
     re.I,
 )
 # "C GST", "S GST" (OCR splits the letter off) are CGST and SGST.
@@ -300,16 +300,27 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
 
         tax = TAX_RE.search(low)
         if tax and "total" in squashed:
-            tax_total = (abs(amount), _tax_rate_bp(label), row)  # used only if no CGST/SGST lines follow
+            if abs(amount) > 0:
+                tax_total = (abs(amount), _tax_rate_bp(label), row)  # used only if no CGST/SGST lines follow
             continue
         if tax:
             comp = re.sub(r"\s", "", tax.group(1)).upper()
             comp = {"UTGST": "SGST", "VAT": "GST"}.get(comp, comp)
-            # "CGST @ 2.5% on 600.00   15.00": the last number is the tax amount.
-            out.taxes.append(ParsedTax(comp, _tax_rate_bp(label), abs(amount), row))
+            if abs(amount) > 0:
+                # "CGST @ 2.5% on 600.00   15.00": the last number is the tax amount.
+                out.taxes.append(ParsedTax(comp, _tax_rate_bp(label), abs(amount), row))
             continue
         if ROUND_WORDS.search(low):
-            out.round_off_minor = amount
+            if abs(amount) <= 5 * 10**exp:
+                out.round_off_minor = amount
+                continue
+            if "total" in squashed:
+                # "ROUND OFF  TOTAL 798.00": rupees-hundreds of "rounding" is a
+                # misread - the number is far more likely the total itself.
+                out.total_minor = _final_total(amt_text, amount, out.total_minor, exp, prefer=True)
+                seen_total = True
+                continue
+            out.unparsed_lines.append(row)  # keep it visible, poison nothing
             continue
         if SUBTOTAL_WORDS.search(low) or SUBTOTAL_WORDS.search(squashed):
             out.subtotal_minor = amount
@@ -564,21 +575,30 @@ def _item_from_row(label: str, amount: int, row: str, exp: int) -> ParsedItem:
     """name [qty] [rate] amount: trust quantity and rate only when they agree with the amount."""
     with_unit = UNIT_WORDS.search(label) is not None
     label = UNIT_WORDS.sub("", label)
-    name = re.sub(r"(?:\s+[x×]?\s*\d[\d,]*(?:\.\d{1,2})?)+\s*$", "", label).strip(" :.-x×") or label
+    name = re.sub(r"(?:\s+[x×]?\s*\d[\d,]*(?:\.\d{1,2})?\s*[/\-]?\s*)+$", "", label).strip(" :.-x×/") or label
     nums = re.findall(r"\d[\d,]*(?:\.\d{1,2})?", label[len(name):])
     qty_milli, unit, confidence = 1000, amount, 70
 
     def small_int(t: str) -> int | None:
         return int(t) if t.isdigit() and 0 < int(t) <= 99 else None
 
+    def num_value(t: str) -> float | None:
+        """POS bills print the quantity with decimals ("2.00"); read it as a number."""
+        try:
+            return float(t.replace(",", ""))
+        except ValueError:
+            return None
+
     if len(nums) >= 2:
-        q, rate = small_int(nums[-2]), to_minor(nums[-1], exp)
+        v_q, rate = num_value(nums[-2]), to_minor(nums[-1], exp)
+        q = int(v_q) if v_q is not None and v_q == int(v_q) and 0 < v_q <= 99 else None
         if q and rate is not None and rate * q == amount:
             qty_milli, unit, confidence = q * 1000, rate, 95
         else:
             confidence = 50  # numbers present but they don't multiply out: needs a look
     elif len(nums) == 1:
-        q = small_int(nums[0])
+        v = num_value(nums[0])
+        q = int(v) if v is not None and v == int(v) and 0 < v <= 99 else None
         rate = to_minor(nums[0], exp)
         if q and q > 1 and amount % q == 0:
             qty_milli, unit, confidence = q * 1000, amount // q, 90 if with_unit else 75
@@ -586,6 +606,9 @@ def _item_from_row(label: str, amount: int, row: str, exp: int) -> ParsedItem:
             confidence = 90  # "PANEER TIKKA  1  POR  399.00": a quantity column
         elif rate == amount:
             confidence = 90  # "Lassi  80.00  80.00": rate equals amount, quantity 1
+        elif v is not None and v != int(v) and 0 < v < 24 and (amount * 1000) % round(v * 1000) == 0:
+            # a fractional count ("PAKODA 2.50 100.00"): the amount stays king
+            qty_milli, unit, confidence = round(v * 1000), amount * 1000 // round(v * 1000), 70
     if not re.search(r"[a-zA-Z]{3,}", name):
         confidence = min(confidence, 40)
     else:

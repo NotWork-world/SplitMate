@@ -299,3 +299,40 @@ def test_dish_name_repair_keeps_the_unknown_as_printed():
     assert repair_item_name("XYZQQ Special") == "XYZQQ Special"
     assert repair_item_name("7UP Maggi Masala") == "7UP Maggi Masala"
     assert repair_item_name("Paneer Tikka Biryani") == "Paneer Tikka Biryani"  # already good
+
+
+def test_token_number_row_is_not_an_item():
+    """'TOKEN No.149' is the order token the counter gave, not a dish for Rs 149."""
+    r = parse_receipt(
+        lines("TUNDAY KABABI", "31/10/2026", "TOKEN No.149", "CHICKEN BIRYANI 2.00/760.00"),
+        "INR",
+    )
+    assert [i.name for i in r.items] == ["Chicken Biryani"]
+    b = r.items[0]
+    assert (b.quantity_milli, b.unit_price_minor, b.amount_minor) == (2000, 38000, 76000)
+
+
+def test_decimal_quantity_column_is_the_count():
+    """POS bills print the qty with decimals; it must not stay glued to the name."""
+    r = parse_receipt(lines("Dhaba", "BUTTER ROTI 8.00 180.00", "PAKODA 2.50 100.00"), "INR")
+    roti = next(i for i in r.items if i.name == "Butter Roti")
+    assert (roti.quantity_milli, roti.unit_price_minor, roti.amount_minor) == (8000, 2250, 18000)
+    pakoda = next(i for i in r.items if i.name == "Pakoda")
+    assert (pakoda.quantity_milli, pakoda.unit_price_minor, pakoda.amount_minor) == (2500, 4000, 10000)
+
+
+def test_zero_taxes_and_huge_round_off_are_not_taken():
+    """A 'SGST 0.00' summary row and a misread 'Round Off 798' must not poison the split."""
+    r = parse_receipt(lines("Dhaba", "Roti 40", "SGST 2.5% 0.00", "Round Off 798.00"))
+    assert r.taxes == []
+    assert r.round_off_minor is None
+    assert "Round Off 798.00" in r.unparsed_lines
+    assert not any("CGST/SGST" in w for w in r.warnings)
+
+
+def test_round_off_next_to_total_becomes_the_total():
+    """"ROUND OFF TOTAL 798.00": hundreds of rupees of 'rounding' is the total."""
+    r = parse_receipt(lines("Dhaba", "Roti 40", "ROUND OFF TOTAL 798.00"), "INR")
+    assert r.round_off_minor is None and r.total_minor == 79800
+    r2 = parse_receipt(lines("Dhaba", "Roti 40", "Round Off 798.00"), "INR")
+    assert r2.round_off_minor is None and r2.total_minor is None
