@@ -65,10 +65,14 @@ def test_never_invents_missing_values():
     assert any("hard to read" in w for w in r.warnings)
 
 
-def test_flags_subtotal_mismatch_and_single_tax_component():
+def test_flags_subtotal_mismatch_and_completes_a_single_tax_half():
+    """A lone CGST line gets its SGST twin rebuilt (equal halves of one GST);
+    the subtotal mismatch is still flagged for the person to check."""
     r = parse_receipt(lines("Dhaba", "Dal  150.00", "Sub Total  250.00", "CGST 2.5%  6.25", "Total  256.25"), "INR")
-    assert any("don't add up" in w for w in r.warnings)
-    assert any("CGST/SGST" in w for w in r.warnings)
+    assert {t.component for t in r.taxes} == {"CGST", "SGST"}
+    assert all(t.rate_bp == 250 and t.amount_minor == 625 for t in r.taxes)
+    assert any("add up to the receipt's subtotal" in w for w in r.warnings)
+    assert not any("CGST/SGST" in w for w in r.warnings)
 
 
 def test_rows_are_rebuilt_from_positioned_fragments():
@@ -336,3 +340,35 @@ def test_round_off_next_to_total_becomes_the_total():
     assert r.round_off_minor is None and r.total_minor == 79800
     r2 = parse_receipt(lines("Dhaba", "Roti 40", "Round Off 798.00"), "INR")
     assert r2.round_off_minor is None and r2.total_minor is None
+
+
+def test_missing_cgst_is_recovered_from_sgst():
+    """CGST and SGST are equal halves of one GST; if the reader loses one
+    line, the other is rebuilt from its twin - the app then auto-applies 5%."""
+    r = parse_receipt(lines("Dhaba", "Biryani 800.00", "SGST 2.5% 19.50", "TOTAL 839.00"), "INR")
+    assert {t.component for t in r.taxes} == {"CGST", "SGST"}
+    assert all(t.rate_bp == 250 and t.amount_minor == 1950 for t in r.taxes)
+
+
+def test_bare_gst_line_beside_one_half_is_the_missing_half():
+    """'GST 2.5% 19.50' next to 'SGST 2.5% 19.50' is CGST with its C lost."""
+    r = parse_receipt(lines("Dhaba", "Biryani 800.00", "GST 2.5% 19.50", "SGST 2.5% 19.50", "TOTAL 839.00"), "INR")
+    assert {t.component for t in r.taxes} == {"CGST", "SGST"}
+    assert all(t.rate_bp == 250 and t.amount_minor == 1950 for t in r.taxes)
+
+
+def test_tax_halves_verified_against_the_total_gst_line():
+    """The bill's 'Total GST (5%)' is the ground truth: 19.50+19.50 = 39.00."""
+    r = parse_receipt(lines("Dhaba", "Biryani 800.00", "SGST 2.5% 19.50", "Total GST(5%) 39.00", "TOTAL 839.00"), "INR")
+    assert {t.component for t in r.taxes} == {"CGST", "SGST"}
+    assert not any("add up" in w for w in r.warnings)
+    # A misread half (19.00 where 19.50 was printed) is flagged, not trusted.
+    r2 = parse_receipt(lines("Dhaba", "Biryani 800.00", "SGST 2.5% 19.00", "Total GST(5%) 39.00"), "INR")
+    assert any("add up" in w for w in r2.warnings)
+
+
+def test_half_rate_comes_from_total_gst_when_missing():
+    """"SGST 19.50" with no rate printed, next to "Total GST(5%)": 2.5% each."""
+    r = parse_receipt(lines("Dhaba", "Biryani 800.00", "SGST 19.50", "Total GST(5%) 39.00"), "INR")
+    assert {t.component for t in r.taxes} == {"CGST", "SGST"}
+    assert all(t.rate_bp == 250 for t in r.taxes)

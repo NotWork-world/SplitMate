@@ -424,6 +424,40 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
     for t in out.taxes:
         if t.rate_bp is None and t.component in ("CGST", "SGST"):
             t.rate_bp = rates.get("SGST" if t.component == "CGST" else "CGST")
+    # CGST and SGST are two halves of one GST: same rate, same amount, always
+    # printed together. The reader sometimes loses the C or the S: recover the
+    # missing half from the one that was read (its amount equals its twin's).
+    comps = {t.component for t in out.taxes}
+    if ("CGST" in comps) != ("SGST" in comps):
+        have = next(t for t in out.taxes if t.component in ("CGST", "SGST"))
+        if have.rate_bp is None and tax_total and tax_total[1]:
+            have.rate_bp = tax_total[1] // 2  # "Total GST (5%)": each half is 2.5%
+        bare = [
+            t
+            for t in out.taxes
+            if t.component == "GST" and t.rate_bp == have.rate_bp and t.amount_minor == have.amount_minor
+        ]
+        if bare:
+            # a bare "GST" line with the same rate and amount IS the missing half
+            bare[0].component = "CGST" if have.component == "SGST" else "SGST"
+        else:
+            out.taxes.append(
+                ParsedTax(
+                    "CGST" if have.component == "SGST" else "SGST",
+                    have.rate_bp,
+                    have.amount_minor,
+                    have.source,
+                )
+            )
+    # The bill's own "Total GST (5%)" line is the ground truth for the pair.
+    # Bills round each half up (23.42 + 23.42 vs a 46.83 total), so allow the
+    # rounding the printer itself introduces - a few paise, never rupees.
+    if tax_total:
+        pair = [t for t in out.taxes if t.component in ("CGST", "SGST")]
+        if len(pair) == 2:
+            slack = 2 if exp >= 2 else (1 if exp == 1 else 0)
+            if abs(pair[0].amount_minor + pair[1].amount_minor - tax_total[0]) > slack:
+                out.warnings.append("The two tax halves don't add up to the bill's Total GST line. Check them.")
     _check(out)
     return out
 
