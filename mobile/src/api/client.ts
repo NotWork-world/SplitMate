@@ -85,8 +85,10 @@ async function rawFetch(method: string, path: string, opts: RequestOptions): Pro
     headers['Idempotency-Key'] = opts.idempotencyKey;
   }
   const controller = new AbortController();
-  // Render's free tier can take ~50 s to wake; keep the user informed rather than failing early.
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 70_000);
+  // Regular calls fail fast (15 s) so the app never hangs: cached screens stay
+  // usable and a banner offers a retry. Only the bill-reading call, which can
+  // land while the free server is still waking (~50 s), passes a longer one.
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 15_000);
   try {
     return await fetch(`${apiUrl()}/api${path}`, {
       method,
@@ -190,8 +192,15 @@ export async function uploadFile<T>(path: string, file: {uri: string; type: stri
 
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown, idempotencyKey?: string) => request<T>('POST', path, {body: body ?? {}, idempotencyKey}),
+  post: <T>(path: string, body?: unknown, idempotencyKey?: string, timeoutMs?: number) =>
+    request<T>('POST', path, {body: body ?? {}, idempotencyKey, timeoutMs}),
   put: <T>(path: string, body: unknown) => request<T>('PUT', path, {body}),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, {body}),
   del: <T>(path: string) => request<T>('DELETE', path),
 };
+
+/** Wake the free server in the background (it sleeps when unused and takes ~50 s
+ * to answer). Fire-and-forget: callers never wait for it. */
+export function warmUp(): void {
+  request<void>('GET', '/health', {auth: false, timeoutMs: 60_000}).catch(() => {});
+}

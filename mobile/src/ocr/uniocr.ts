@@ -102,6 +102,13 @@ export function engineReady(): boolean {
   return enginePromise !== null;
 }
 
+/** True once the models are unpacked into app storage: the "one-time setup" is
+ * done and only a quick load into memory remains (which the app preloads at
+ * open, so scans don't wait). */
+export function modelsUnpacked(): Promise<boolean> {
+  return RNFS.exists(MARKER).catch(() => false);
+}
+
 function tensorData(t: Tensor): Float32Array {
   const d = t.data as Float32Array | number[];
   return d instanceof Float32Array ? d : Float32Array.from(d);

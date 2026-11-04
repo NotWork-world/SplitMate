@@ -1,13 +1,18 @@
-import React, {useEffect} from 'react';
+import React, {useEffect, useState} from 'react';
 import {Linking, Pressable, StyleSheet, View} from 'react-native';
 import {DarkTheme, DefaultTheme, NavigationContainer, type LinkingOptions} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createBottomTabNavigator, type BottomTabBarProps} from '@react-navigation/bottom-tabs';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Activity, Home, Plus, User, Users} from 'lucide-react-native';
+import NetInfo from '@react-native-community/netinfo';
+import {RefreshCw, WifiOff, X} from 'lucide-react-native';
 import {Gradient, Text, haptics, useTheme} from '../design';
 import {initialNotificationLink, onNotificationTap} from '../push/push';
-import {useAppSelector} from '../store';
+import {useAppDispatch, useAppSelector} from '../store';
+import {splitApi} from '../api/endpoints';
+import {warmUp} from '../api/client';
+import {engine} from '../ocr/uniocr';
 import {OnboardingScreen} from '../features/auth/Onboarding';
 import {SignInScreen, SignUpScreen} from '../features/auth/AuthForms';
 import {HomeScreen} from '../features/home/HomeScreen';
@@ -106,6 +111,78 @@ function MainTabs() {
 // An invite link opened before signing in/up: kept until the app stack mounts, then opened.
 let pendingInvite: string | null = null;
 
+/**
+ * Offline notice: "turn on internet", closable, with a Reload line that re-checks
+ * the connection and refreshes everything when it's back. The app itself stays
+ * fully usable on cached data while it shows.
+ */
+function OfflineBanner() {
+  const {colors} = useTheme();
+  const insets = useSafeAreaInsets();
+  const dispatch = useAppDispatch();
+  const [offline, setOffline] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    const sub = NetInfo.addEventListener(s => {
+      const off = !(s.isConnected ?? false) || s.isInternetReachable === false;
+      setOffline(off);
+      if (!off) {
+        setDismissed(false);
+      }
+    });
+    return () => sub();
+  }, []);
+
+  if (!offline || dismissed) {
+    return null;
+  }
+  const reload = async () => {
+    setChecking(true);
+    try {
+      const s = await NetInfo.fetch();
+      if (s.isConnected && s.isInternetReachable !== false) {
+        // Back online: fetch everything fresh (queries re-persist to the cache).
+        dispatch(splitApi.util.resetApiState());
+      }
+    } finally {
+      setChecking(false);
+    }
+  };
+  return (
+    <View
+      accessibilityLiveRegion="polite"
+      style={[styles.banner, {backgroundColor: colors.bgElevated, borderColor: colors.border, marginTop: insets.top + 6}]}>
+      <View style={styles.bannerRow}>
+        <WifiOff size={18} color={colors.text} />
+        <Text variant="body" style={{flex: 1}}>
+          Turn on internet — showing your last synced data
+        </Text>
+        <Pressable accessibilityLabel="Close" hitSlop={10} onPress={() => setDismissed(true)}>
+          <X size={18} color={colors.textFaint} />
+        </Pressable>
+      </View>
+      <View style={[styles.bannerRow, {marginTop: 2}]}>
+        <Text variant="small" tone="faint" style={{flex: 1}}>
+          Reload to check the connection
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Reload"
+          onPress={reload}
+          disabled={checking}
+          style={({pressed}) => [styles.reload, {backgroundColor: pressed ? colors.surfacePressed : colors.highlight}]}>
+          <RefreshCw size={14} color={colors.highlightText} />
+          <Text variant="smallStrong" color={colors.highlightText}>
+            Reload
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 const linking: LinkingOptions<AppParams> = {
   prefixes: ['splitmate://'],
   config: {screens: {JoinGroup: 'join/:code', ExpenseDetail: 'expense/:expenseId', RepaymentDetail: 'repayment/:repaymentId'}},
@@ -127,6 +204,15 @@ const linking: LinkingOptions<AppParams> = {
 
 export function RootNavigator() {
   const status = useAppSelector(s => s.auth.status);
+  useEffect(() => {
+    if (status !== 'signedIn') {
+      return;
+    }
+    // The free server sleeps: wake it in the background while the cached screens
+    // paint, and preload the bill reader so the first scan doesn't wait for it.
+    warmUp();
+    engine().catch(() => {});
+  }, [status]);
   useEffect(() => {
     if (status === 'signedIn') {
       return;
@@ -153,7 +239,8 @@ export function RootNavigator() {
   }
   return (
     // Keyed by status so signing in remounts it and the pending invite link is read.
-    <NavigationContainer key={status} theme={navTheme} linking={status === 'signedIn' ? linking : undefined}>
+    <View style={{flex: 1}}>
+      <NavigationContainer key={status} theme={navTheme} linking={status === 'signedIn' ? linking : undefined}>
       {status === 'signedIn' ? (
         <AppStack.Navigator screenOptions={screenOptions}>
           <AppStack.Screen name="Tabs" component={MainTabs} />
@@ -184,11 +271,30 @@ export function RootNavigator() {
           <AuthStack.Screen name="SignUp" component={SignUpScreen} />
         </AuthStack.Navigator>
       )}
-    </NavigationContainer>
+      </NavigationContainer>
+      {status === 'signedIn' ? <OfflineBanner /> : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  banner: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    gap: 4,
+    elevation: 6,
+    shadowColor: '#1F3B2D',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 4},
+    zIndex: 100,
+  },
+  bannerRow: {flexDirection: 'row', alignItems: 'center', gap: 10},
+  reload: {flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999},
   bar: {flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8},
   tab: {flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, minHeight: 48},
   indicator: {position: 'absolute', top: 2, width: 52, height: 30, borderRadius: 15},

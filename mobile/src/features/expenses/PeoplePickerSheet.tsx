@@ -143,7 +143,9 @@ export function PeoplePickerSheet({
   const known = people.data ?? [];
   const extra = picked.filter(p => !known.some(k => `@${k.username}` === p.key));
   const groupList = (groups.data ?? []).filter(g => !g.archived && g.type !== 'personal');
-
+  // Typing filters your people (name or @handle); "@handle" looks anyone up.
+  const q = entry.trim().toLowerCase();
+  const shown = q && !q.startsWith('@') ? known.filter(k => k.display_name.toLowerCase().includes(q) || k.username.toLowerCase().includes(q)) : known;
   return (
     <Sheet
       visible={visible}
@@ -194,7 +196,13 @@ export function PeoplePickerSheet({
           </Text>
           <Button label="Add from phone contacts" icon={BookUser} variant="secondary" loading={busy} onPress={addContact} style={{marginTop: space.md}} testID="people-contact" />
           <View style={{marginTop: space.md, gap: space.xs}}>
-            {[...known.map(fromUser), ...extra].map(p => {
+            {people.isError && !known.length ? (
+              <View style={{marginBottom: space.sm}}>
+                <Banner tone="negative" title="Couldn't load your people. Check your connection." />
+                <Button label="Try again" variant="secondary" onPress={() => people.refetch()} style={{marginTop: space.xs}} testID="people-retry" />
+              </View>
+            ) : null}
+            {[...shown.map(fromUser), ...extra].map(p => {
               const on = has(p.key);
               return (
                 <Pressable
@@ -227,9 +235,11 @@ export function PeoplePickerSheet({
                 </Pressable>
               );
             })}
-            {!known.length && !extra.length && !people.isLoading ? (
+            {!shown.length && !extra.length && !people.isLoading ? (
               <Text variant="small" tone="muted">
-                People you split with show up here next time.
+                {people.isSuccess
+                  ? 'People you split with show up here next time.'
+                  : 'Your people list needs the internet once.'}
               </Text>
             ) : null}
           </View>

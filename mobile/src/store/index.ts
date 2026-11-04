@@ -1,5 +1,8 @@
-import {configureStore, createSlice, PayloadAction} from '@reduxjs/toolkit';
+import {configureStore, combineReducers, createSlice, type PayloadAction} from '@reduxjs/toolkit';
 import {TypedUseSelectorHook, useDispatch, useSelector} from 'react-redux';
+import {persistStore, persistReducer, FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER} from 'redux-persist';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {setupListeners} from '@reduxjs/toolkit/query';
 import {splitApi} from '../api/endpoints';
 import type {User} from '../api/types';
 import {draftsReducer, persistDrafts} from '../features/expenses/draft';
@@ -31,14 +34,32 @@ const authSlice = createSlice({
 
 export const {signedIn, signedOut, userUpdated} = authSlice.actions;
 
-export const store = configureStore({
-  reducer: {
-    auth: authSlice.reducer,
-    drafts: draftsReducer,
-    [splitApi.reducerPath]: splitApi.reducer,
-  },
-  middleware: gdm => gdm().concat(splitApi.middleware),
+// The API cache and the signed-in profile persist: the app opens instantly with
+// the last data, online or not, and refreshes in the background. Drafts persist
+// on their own (an unfinalised bill is data, not a cache), so they stay out.
+const rootReducer = combineReducers({
+  auth: authSlice.reducer,
+  drafts: draftsReducer,
+  [splitApi.reducerPath]: splitApi.reducer,
 });
+
+const persistedReducer = persistReducer(
+  {key: 'splitmate', storage: AsyncStorage, version: 1, blacklist: ['drafts']},
+  rootReducer,
+);
+
+export const store = configureStore({
+  reducer: persistedReducer,
+  middleware: gdm =>
+    gdm({
+      serializableCheck: {ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER]},
+    }).concat(splitApi.middleware),
+});
+
+// When the internet comes back (NetInfo), every subscribed query refetches.
+setupListeners(store.dispatch);
+
+export const persistor = persistStore(store);
 
 let lastDrafts = store.getState().drafts.byId;
 store.subscribe(() => {

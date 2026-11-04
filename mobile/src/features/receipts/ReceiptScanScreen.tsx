@@ -24,7 +24,7 @@ import {
   useToast,
 } from '../../design';
 import {formatBp, formatMoney, formatQty} from '../../money/currency';
-import {recognize, type Progress} from '../../ocr/uniocr';
+import {recognize, modelsUnpacked, type Progress} from '../../ocr/uniocr';
 import type {AppScreen} from '../../navigation/types';
 import {useAppDispatch, useAppSelector} from '../../store';
 import {createDraft, draftActions, emptyPayload, matchReceiptPatch, newCharge, newDiscount, newItem, preview} from '../expenses/draft';
@@ -77,9 +77,22 @@ export function ReceiptScanScreen({route, navigation}: AppScreen<'ReceiptScan'>)
     setAsset(a);
     setStage('reading');
     setFailure(null);
+    // "One-time setup" only the very first scan ever: after that the reader is
+    // unpacked (and preloaded at app open), so say what's really happening.
+    let label: string | null = null;
     const onProgress: Progress = s => {
       if (s === 'loading') {
-        setProgressLabel('Getting the reader ready… one-time setup');
+        if (label === null) {
+          label = 'Waking the reader…';
+          setProgressLabel(label);
+          modelsUnpacked().then(done => {
+            if (!done) {
+              setProgressLabel('Getting the reader ready… one-time setup');
+            }
+          });
+        } else {
+          setProgressLabel(label);
+        }
       } else if (s === 'detecting') {
         setProgressLabel('Finding the text on the bill…');
       } else {
@@ -103,8 +116,11 @@ export function ReceiptScanScreen({route, navigation}: AppScreen<'ReceiptScan'>)
         return;
       }
       const body = {lines: lines.slice(0, 600), currency, provider: 'uniocr'};
-      // The free server can answer with an error page while it wakes up: try once more.
-      const p = await api.post<Parsed>('/receipts/parse', body).catch(() => api.post<Parsed>('/receipts/parse', body));
+      // Reading happens on the phone; only the sorting is server-side, and the
+      // free server may still be waking (the app warms it at open): give it a
+      // long rope, one retry on a wake-up error page.
+      const parse = () => api.post<Parsed>('/receipts/parse', body, undefined, 70_000);
+      const p = await parse().catch(parse);
       setParsed(p);
       setSelected(p.items.map(() => true));
       const comps = new Set(p.taxes.map(t => t.component));

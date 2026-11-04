@@ -40,27 +40,39 @@ export async function restoreSession(dispatch: AppDispatch) {
     }
     return false;
   };
-  try {
-    if (await ensureAccessToken()) {
-      const user = await api.get<User>('/me');
-      await cacheUser(user);
-      dispatch(signedIn(user));
-      registerForPush();
-      return;
+  // Open instantly with the cached profile; validate against the server in the
+  // background. Only an explicit "session expired" (401) signs the person out -
+  // a sleeping server or no internet keeps the app usable offline.
+  const cachedIn = await signInFromCache();
+  if (!cachedIn) {
+    try {
+      if (await ensureAccessToken()) {
+        const user = await api.get<User>('/me');
+        await cacheUser(user);
+        dispatch(signedIn(user));
+        registerForPush();
+        return;
+      }
+    } catch {
+      // Offline, slow or a server error with nothing cached: the auth screens
+      // let the person retry; only the 401 path above clears the stored token.
     }
-    // The refresh didn't succeed but the session wasn't rejected (the token is still stored):
-    // a server hiccup or the free server waking up. Stay signed in; screens retry.
-    if (currentRefreshToken() && (await signInFromCache())) {
-      return;
-    }
-  } catch {
-    // Offline, slow or a server error at launch: only "session expired" (401) signs you out,
-    // and that path clears the stored token, which is what we check here.
-    if (currentRefreshToken() && (await signInFromCache())) {
-      return;
-    }
+    dispatch(signedOut());
+    return;
   }
-  dispatch(signedOut());
+  // Signed in from cache: refresh the profile quietly (also wakes the token).
+  (async () => {
+    try {
+      if (await ensureAccessToken()) {
+        const user = await api.get<User>('/me');
+        await cacheUser(user);
+        dispatch(signedIn(user));
+        registerForPush();
+      }
+    } catch {
+      // Still offline or the free server waking: the cached session stands.
+    }
+  })();
 }
 
 export async function completeSignIn(dispatch: AppDispatch, tokens: TokenOut) {
