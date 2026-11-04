@@ -83,7 +83,7 @@ export const splitApi = createApi({
       providesTags: ['Groups'],
     }),
     group: b.query<Group, string>({query: id => `/groups/${id}`, providesTags: (_r, _e, id) => [{type: 'Group', id}, 'Groups']}),
-    createGroup: b.mutation<Group, {name: string; type: string; emoji?: string | null; currency: string; start_date?: string | null; end_date?: string | null; members: Array<{display_name: string}>}>({
+    createGroup: b.mutation<Group, {name: string; type: string; emoji?: string | null; currency: string; start_date?: string | null; end_date?: string | null; members: Array<{display_name?: string; username?: string; contact_email?: string}>}>({
       query: body => ({url: '/groups', method: 'POST', body}),
       invalidatesTags: ['Groups', 'Summary'],
     }),

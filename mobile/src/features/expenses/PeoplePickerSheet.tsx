@@ -82,11 +82,18 @@ export function PeoplePickerSheet({
         setError(errorMessage(e));
       }
     } else {
+      // Typing the name of someone you already split with links their account
+      // (only a unique exact match to your own people - never a stranger).
+      const matches = (people.data ?? []).filter(k => k.display_name.toLowerCase() === text.toLowerCase());
+      if (matches.length === 1 && !has(`@${matches[0].username}`)) {
+        setPicked(list => [...list, fromUser(matches[0])]);
+        setEntry('');
+        return;
+      }
       setPicked(list => [...list, {key: `name:${text.toLowerCase()}:${Date.now()}`, name: text}]);
       setEntry('');
     }
   };
-
   const addContact = async () => {
     setError(null);
     try {

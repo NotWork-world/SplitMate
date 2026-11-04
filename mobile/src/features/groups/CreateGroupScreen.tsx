@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
-import {View} from 'react-native';
-import {Plus, X} from 'lucide-react-native';
-import {errorMessage, useCreateGroupMutation} from '../../api/endpoints';
+import {Pressable, View} from 'react-native';
+import {Check, Plus, X} from 'lucide-react-native';
+import {errorMessage, useCreateGroupMutation, useMyPeopleQuery} from '../../api/endpoints';
 import {
   Banner,
   Button,
@@ -15,6 +15,7 @@ import {
   Text,
   TextField,
   space,
+  useTheme,
 } from '../../design';
 import {SUPPORTED_CURRENCIES} from '../../money/currency';
 import type {AppScreen} from '../../navigation/types';
@@ -26,24 +27,51 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export function CreateGroupScreen({navigation}: AppScreen<'CreateGroup'>) {
   const user = useAppSelector(s => s.auth.user);
   const [create, {isLoading}] = useCreateGroupMutation();
+  const people = useMyPeopleQuery();
+  const {colors} = useTheme();
   const [name, setName] = useState('');
   const [type, setType] = useState<(typeof TYPES)[number]>('friends');
   const [currency, setCurrency] = useState(user?.default_currency ?? 'INR');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [newName, setNewName] = useState('');
-  const [members, setMembers] = useState<string[]>([]);
+  const [members, setMembers] = useState<Array<{name: string; username?: string}>>([]);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const addMember = () => {
-    const n = newName.trim();
-    if (n && !members.includes(n)) {
-      setMembers([...members, n]);
+  // People you already split with: typed text matches their name or @handle.
+  const known = people.data ?? [];
+  const q = newName.trim().toLowerCase();
+  const suggestions = q
+    ? known.filter(k => k.display_name.toLowerCase().includes(q) || k.username.toLowerCase().includes(q)).slice(0, 6)
+    : [];
+  const has = (name: string, username?: string) =>
+    members.some(m => (username ? m.username === username : m.username === undefined && m.name === name));
+
+  const addLinked = (name: string, username: string) => {
+    if (!has(name, username)) {
+      setMembers(list => [...list, {name, username}]);
     }
     setNewName('');
   };
 
+  const addMember = () => {
+    const n = newName.trim();
+    if (!n) {
+      return;
+    }
+    // Typing a friend you already split with links their account (no stranger
+    // guessing: only exact matches to your own people, and only if unique).
+    const matches = known.filter(k => k.display_name.toLowerCase() === n.toLowerCase());
+    if (matches.length === 1) {
+      addLinked(matches[0].display_name, matches[0].username);
+      return;
+    }
+    if (!has(n)) {
+      setMembers(list => [...list, {name: n}]);
+    }
+    setNewName('');
+  };
   const dateErr = (v: string) => (v && !DATE_RE.test(v) ? 'Use YYYY-MM-DD' : null);
 
   const submit = async () => {
@@ -53,7 +81,7 @@ export function CreateGroupScreen({navigation}: AppScreen<'CreateGroup'>) {
     }
     setError(null);
     try {
-      const pending = newName.trim() && !members.includes(newName.trim()) ? [...members, newName.trim()] : members;
+      const pending = newName.trim() ? [...members, {name: newName.trim()}] : members;
       const g = await create({
         name: name.trim(),
         type,
@@ -61,7 +89,7 @@ export function CreateGroupScreen({navigation}: AppScreen<'CreateGroup'>) {
         currency,
         start_date: type === 'trip' && start ? start : null,
         end_date: type === 'trip' && end ? end : null,
-        members: pending.map(display_name => ({display_name})),
+        members: pending.map(m => (m.username ? {username: m.username} : {display_name: m.name})),
       }).unwrap();
       navigation.replace('GroupDetail', {groupId: g.id});
     } catch (e) {
@@ -128,14 +156,43 @@ export function CreateGroupScreen({navigation}: AppScreen<'CreateGroup'>) {
       </View>
       <View style={{marginTop: space.md, gap: space.xs}}>
         {members.map(m => (
-          <View key={m} style={{flexDirection: 'row', alignItems: 'center'}}>
+          <View key={m.username ?? m.name} style={{flexDirection: 'row', alignItems: 'center'}}>
             <Text variant="bodyStrong" style={{flex: 1}}>
-              {m}
+              {m.name}
+              {m.username ? <Text variant="caption" tone="muted"> · on SplitMate (@{m.username})</Text> : null}
             </Text>
-            <IconButton icon={X} label={`Remove ${m}`} onPress={() => setMembers(members.filter(x => x !== m))} />
+            <IconButton icon={X} label={`Remove ${m.name}`} onPress={() => setMembers(members.filter(x => x !== m))} />
           </View>
         ))}
       </View>
+      {suggestions.length ? (
+        <View style={{marginTop: space.sm, gap: space.xs}}>
+          {suggestions.map(k => {
+            const on = has(k.display_name, k.username);
+            return (
+              <Pressable
+                key={k.username}
+                accessibilityRole="button"
+                accessibilityLabel={`Add ${k.display_name}`}
+                onPress={() => addLinked(k.display_name, k.username)}
+                style={({pressed}) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: space.sm,
+                  padding: space.sm,
+                  borderRadius: 12,
+                  backgroundColor: pressed ? colors.surfacePressed : colors.surface,
+                })}>
+                <Check size={18} color={on ? colors.accentText : colors.textFaint} />
+                <Text variant="body" style={{flex: 1}}>
+                  {k.display_name} <Text variant="caption" tone="muted">@{k.username}</Text>
+                </Text>
+                <Text variant="caption" tone="muted">on SplitMate</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
     </Screen>
   );
 }
