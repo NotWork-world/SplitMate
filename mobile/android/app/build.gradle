@@ -162,17 +162,21 @@ android {
         }
     }
 
-    // One APK per phone CPU. A phone only ever loads one ABI, so shipping all four
-    // more than doubles the download for no benefit (278MB universal vs ~a third each).
-    // The native code for every ABI is still built and cached; this only filters what
-    // goes into the APK. Build with -PkeepAbi=armeabi-v7a (or x86_64 for the emulator);
-    // the default, arm64-v8a, is every modern phone.
-    packaging {
-        jniLibs {
-            def keep = (project.findProperty('keepAbi') ?: 'arm64-v8a')
-            excludes += ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']
-                .findAll { it != keep }
-                .collect { "lib/${it}/**" }
+    // One APK per phone CPU: a phone only ever loads one ABI, so shipping all four
+    // more than doubles the download for no benefit. ABI splits are the one
+    // mechanism that filters every packaged .so (AAR-provided included), and React
+    // Native deliberately skips adding its reactNativeArchitectures to abiFilters
+    // when splits are on. Release builds default to arm64-v8a (every modern
+    // phone); -PkeepAbi=x86_64 for the emulator, -PkeepAbi=all for a universal APK
+    // (and no splits at all for debug/dev builds).
+    splits {
+        abi {
+            def keepAbi = (project.findProperty('keepAbi') ?: 'arm64-v8a')
+            def releaseBuild = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+            enable releaseBuild && keepAbi != 'all'
+            reset()
+            include keepAbi
+            universalApk false
         }
     }
 }
