@@ -9,8 +9,7 @@ import NetInfo from '@react-native-community/netinfo';
 import {RefreshCw, WifiOff, X} from 'lucide-react-native';
 import {Gradient, Text, haptics, useTheme} from '../design';
 import {initialNotificationLink, onNotificationTap} from '../push/push';
-import {useAppDispatch, useAppSelector} from '../store';
-import {splitApi} from '../api/endpoints';
+import {useAppSelector, syncNow} from '../store';
 import {warmUp} from '../api/client';
 import {engine} from '../ocr/uniocr';
 import {OnboardingScreen} from '../features/auth/Onboarding';
@@ -119,7 +118,6 @@ let pendingInvite: string | null = null;
 function OfflineBanner() {
   const {colors} = useTheme();
   const insets = useSafeAreaInsets();
-  const dispatch = useAppDispatch();
   const [offline, setOffline] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -143,8 +141,8 @@ function OfflineBanner() {
     try {
       const s = await NetInfo.fetch();
       if (s.isConnected && s.isInternetReachable !== false) {
-        // Back online: fetch everything fresh (queries re-persist to the cache).
-        dispatch(splitApi.util.resetApiState());
+        // Back online: refresh everything without dropping the cache on screen.
+        syncNow();
       }
     } finally {
       setChecking(false);
