@@ -54,8 +54,9 @@ export const splitApi = createApi({
   baseQuery,
   tagTypes: ['Me', 'Summary', 'Groups', 'Group', 'Expenses', 'Expense', 'Balances', 'Repayments', 'Activity', 'Notifications'],
   // Coming back to the app (a tapped notification, or just reopening) refreshes
-  // every subscribed query on its own; refetch-on-reconnect is on by default.
+  // every subscribed query on its own; the internet coming back does the same.
   refetchOnFocus: true,
+  refetchOnReconnect: true,
   endpoints: b => ({
     health: b.query<Health, void>({query: () => '/health'}),
     me: b.query<User, void>({query: () => '/me', providesTags: ['Me']}),
