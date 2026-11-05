@@ -1,6 +1,6 @@
 import {configureStore, combineReducers, createSlice, type PayloadAction} from '@reduxjs/toolkit';
 import {TypedUseSelectorHook, useDispatch, useSelector} from 'react-redux';
-import {persistStore, persistReducer, FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER} from 'redux-persist';
+import {persistStore, persistReducer, createTransform, FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER} from 'redux-persist';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {setupListeners} from '@reduxjs/toolkit/query';
 import NetInfo from '@react-native-community/netinfo';
@@ -45,8 +45,54 @@ const rootReducer = combineReducers({
   [splitApi.reducerPath]: splitApi.reducer,
 });
 
+/**
+ * redux-persist saves the request bookkeeping too: close the app while a
+ * request is in flight and the next launch rehydrates a query stuck in
+ * "pending" that nothing will ever finish - the home screen then sits on
+ * "Loading your balances" forever. Drop half-finished requests on the way
+ * in from disk; RTK Query refetches anything without a result on its own.
+ */
+const dropHalfFinishedRequests = createTransform<any, any>(
+  state => state,
+  state => {
+    if (!state || typeof state !== 'object') {
+      return state;
+    }
+    const s = state as {
+      queries?: Record<string, {status?: string} | undefined>;
+      mutations?: Record<string, Record<string, {status?: string} | undefined>>;
+    };
+    const queries = s.queries ? {...s.queries} : s.queries;
+    if (queries) {
+      for (const k of Object.keys(queries)) {
+        if (queries[k]?.status === 'pending') {
+          delete queries[k];
+        }
+      }
+    }
+    const mutations = s.mutations ? {...s.mutations} : s.mutations;
+    if (mutations) {
+      for (const k of Object.keys(mutations)) {
+        const entries = mutations[k];
+        if (entries && typeof entries === 'object') {
+          for (const rk of Object.keys(entries)) {
+            if (entries[rk]?.status === 'pending') {
+              delete entries[rk];
+            }
+          }
+        }
+      }
+    }
+    return {...s, queries, mutations};
+  },
+  {whitelist: ['splitApi']},
+);
+
+// The transform's typing fights persistReducer's generics (redux-persist and
+// @reduxjs/toolkit carry unrelated copies of redux's types), so the config is
+// left untyped and the store's shape comes from the reducer itself, as before.
 const persistedReducer = persistReducer(
-  {key: 'splitmate', storage: AsyncStorage, version: 1, blacklist: ['drafts']},
+  {key: 'splitmate', storage: AsyncStorage, version: 1, blacklist: ['drafts'], transforms: [dropHalfFinishedRequests]} as any,
   rootReducer,
 );
 

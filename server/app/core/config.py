@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     # Empty = notifications stay in the app only.
     firebase_credentials: str = ""
 
+    # In-app update check, served on /api/health as "app". The phone app compares
+    # its own package version against app_latest_version and offers the APK at
+    # app_apk_url. Bump BOTH with every phone release (the version is the mobile
+    # package.json one, e.g. "0.7.0"; the URL is the release asset).
+    app_latest_version: str = "0.7.0"
+    app_apk_url: str = (
+        "https://github.com/NotWork-world/SplitMate/releases/download/v1.6.0/SplitMate-v1.6.0-arm64.apk"
+    )
+
     @field_validator("database_url")
     @classmethod
     def _normalise_db_url(cls, v: str) -> str:

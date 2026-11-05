@@ -53,6 +53,10 @@ def create_app() -> FastAPI:
                 # Receipt text is recognised on the phone (ML Kit); the server only structures it.
                 "ocr": "on-device",
             },
+            "app": {
+                "latest": settings.app_latest_version,
+                "apk_url": settings.app_apk_url,
+            },
         }
 
     @app.get("/i/{code}", include_in_schema=False)

@@ -270,6 +270,7 @@ export interface Health {
   ok: boolean;
   version: string;
   features: {google_sign_in: boolean; google_web_client_id: string | null; receipt_storage: string; ocr?: string};
+  app?: {latest: string; apk_url: string};
 }
 
 export interface InvitePreview {

@@ -12,6 +12,7 @@ import {initialNotificationLink, onNotificationTap} from '../push/push';
 import {useAppSelector, syncNow} from '../store';
 import {warmUp} from '../api/client';
 import {engine} from '../ocr/uniocr';
+import {UpdatePrompt} from '../features/app/UpdatePrompt';
 import {OnboardingScreen} from '../features/auth/Onboarding';
 import {SignInScreen, SignUpScreen} from '../features/auth/AuthForms';
 import {HomeScreen} from '../features/home/HomeScreen';
@@ -271,6 +272,7 @@ export function RootNavigator() {
       )}
       </NavigationContainer>
       {status === 'signedIn' ? <OfflineBanner /> : null}
+      {status === 'signedIn' ? <UpdatePrompt /> : null}
     </View>
   );
 }
