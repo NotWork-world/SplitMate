@@ -1,0 +1,387 @@
+[
+{
+"text": "TAKE AWAY",
+"left": 607,
+"top": 5,
+"width": 304,
+"height": 48
+},
+{
+"text": "ROYAL CUISINE AND BAKERS",
+"left": 459,
+"top": 44,
+"width": 561,
+"height": 37
+},
+{
+"text": "Mob :9517333248,7081871510",
+"left": 430,
+"top": 78,
+"width": 637,
+"height": 38
+},
+{
+"text": "GSTIN - 09FURPK2636A2ZH",
+"left": 473,
+"top": 115,
+"width": 548,
+"height": 38
+},
+{
+"text": "Table No:FF-7",
+"left": 553,
+"top": 213,
+"width": 385,
+"height": 49
+},
+{
+"text": "04/11/2026",
+"left": 330,
+"top": 287,
+"width": 235,
+"height": 43
+},
+{
+"text": "User : Vishal",
+"left": 327,
+"top": 331,
+"width": 305,
+"height": 41
+},
+{
+"text": "Bill:RCAB2627-018089",
+"left": 327,
+"top": 374,
+"width": 493,
+"height": 37
+},
+{
+"text": "Item",
+"left": 326,
+"top": 456,
+"width": 99,
+"height": 35
+},
+{
+"text": "Qty",
+"left": 719,
+"top": 453,
+"width": 79,
+"height": 43
+},
+{
+"text": "Price",
+"left": 840,
+"top": 452,
+"width": 129,
+"height": 38
+},
+{
+"text": "Amount",
+"left": 1008,
+"top": 452,
+"width": 151,
+"height": 33
+},
+{
+"text": "5 STAR OREO",
+"left": 322,
+"top": 538,
+"width": 233,
+"height": 37
+},
+{
+"text": "1",
+"left": 783,
+"top": 542,
+"width": 21,
+"height": 32
+},
+{
+"text": "45.00",
+"left": 846,
+"top": 537,
+"width": 109,
+"height": 38
+},
+{
+"text": "45.00",
+"left": 1059,
+"top": 539,
+"width": 112,
+"height": 38
+},
+{
+"text": "(HSN CODE-.)",
+"left": 327,
+"top": 581,
+"width": 213,
+"height": 34
+},
+{
+"text": "ICE CREAM CUP",
+"left": 322,
+"top": 624,
+"width": 273,
+"height": 37
+},
+{
+"text": "1",
+"left": 780,
+"top": 628,
+"width": 23,
+"height": 33
+},
+{
+"text": "50.00",
+"left": 844,
+"top": 623,
+"width": 110,
+"height": 40
+},
+{
+"text": "50.00",
+"left": 1053,
+"top": 628,
+"width": 112,
+"height": 35
+},
+{
+"text": "MUNCH MAX",
+"left": 319,
+"top": 670,
+"width": 193,
+"height": 31
+},
+{
+"text": "1",
+"left": 777,
+"top": 669,
+"width": 24,
+"height": 35
+},
+{
+"text": "20.00",
+"left": 839,
+"top": 668,
+"width": 113,
+"height": 41
+},
+{
+"text": "20.00",
+"left": 1051,
+"top": 672,
+"width": 112,
+"height": 38
+},
+{
+"text": "ITEMS:",
+"left": 322,
+"top": 753,
+"width": 139,
+"height": 39
+},
+{
+"text": "3",
+"left": 530,
+"top": 755,
+"width": 27,
+"height": 36
+},
+{
+"text": "(3)",
+"left": 791,
+"top": 757,
+"width": 71,
+"height": 50
+},
+{
+"text": "115.00",
+"left": 1020,
+"top": 761,
+"width": 145,
+"height": 39
+},
+{
+"text": "GST",
+"left": 324,
+"top": 841,
+"width": 78,
+"height": 34
+},
+{
+"text": "(58) On 111.90",
+"left": 415,
+"top": 841,
+"width": 330,
+"height": 37
+},
+{
+"text": "5.60",
+"left": 1061,
+"top": 845,
+"width": 98,
+"height": 37
+},
+{
+"text": "NET TOTAL",
+"left": 318,
+"top": 880,
+"width": 216,
+"height": 35
+},
+{
+"text": "117.50",
+"left": 1019,
+"top": 884,
+"width": 144,
+"height": 33
+},
+{
+"text": "(Round off)",
+"left": 323,
+"top": 920,
+"width": 248,
+"height": 38
+},
+{
+"text": "0.50",
+"left": 1070,
+"top": 921,
+"width": 98,
+"height": 37
+},
+{
+"text": "Tax",
+"left": 311,
+"top": 1007,
+"width": 103,
+"height": 34
+},
+{
+"text": "Summary...",
+"left": 401,
+"top": 1008,
+"width": 235,
+"height": 37
+},
+{
+"text": "Tax",
+"left": 307,
+"top": 1092,
+"width": 82,
+"height": 39
+},
+{
+"text": "1.C",
+"left": 720,
+"top": 1094,
+"width": 53,
+"height": 32
+},
+{
+"text": "Amt",
+"left": 776,
+"top": 1091,
+"width": 86,
+"height": 37
+},
+{
+"text": "Tax Amount",
+"left": 931,
+"top": 1093,
+"width": 250,
+"height": 34
+},
+{
+"text": "GST",
+"left": 306,
+"top": 1182,
+"width": 78,
+"height": 36
+},
+{
+"text": "58",
+"left": 449,
+"top": 1180,
+"width": 52,
+"height": 38
+},
+{
+"text": ".11.90",
+"left": 677,
+"top": 1181,
+"width": 137,
+"height": 39
+},
+{
+"text": "5.60",
+"left": 1028,
+"top": 1179,
+"width": 104,
+"height": 40
+},
+{
+"text": "Payable Amt.",
+"left": 521,
+"top": 1269,
+"width": 513,
+"height": 70
+},
+{
+"text": "118.00",
+"left": 646,
+"top": 1331,
+"width": 276,
+"height": 64
+},
+{
+"text": "Settled By",
+"left": 317,
+"top": 1433,
+"width": 250,
+"height": 37
+},
+{
+"text": "PAYTM:",
+"left": 571,
+"top": 1430,
+"width": 142,
+"height": 35
+},
+{
+"text": "Amount: 118",
+"left": 317,
+"top": 1514,
+"width": 264,
+"height": 40
+},
+{
+"text": "Orders:",
+"left": 322,
+"top": 1651,
+"width": 193,
+"height": 40
+},
+{
+"text": "E0008",
+"left": 500,
+"top": 1653,
+"width": 126,
+"height": 36
+},
+{
+"text": "!!!",
+"left": 330,
+"top": 1795,
+"width": 89,
+"height": 37
+},
+{
+"text": "Thank You Plz Visit Again!!!",
+"left": 409,
+"top": 1793,
+"width": 754,
+"height": 49
+}
+]

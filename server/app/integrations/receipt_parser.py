@@ -415,10 +415,31 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
         and gst_pair[0].amount_minor == gst_pair[1].amount_minor
         and gst_pair[0].rate_bp == gst_pair[1].rate_bp
     ):
-        # "C GST" / "S GST" with the C or S lost to OCR: two identical GST
-        # lines at the same rate are the CGST/SGST pair on an Indian bill.
-        gst_pair[0].component = "CGST"
-        gst_pair[1].component = "SGST"
+        # Two identical bare "GST" lines are one of two very different bills:
+        #   1. a CGST/SGST pair whose C or S was lost to OCR — the two lines
+        #      together are the whole tax, so items + BOTH + round-off reach
+        #      the printed total;
+        #   2. the SAME tax printed twice (once in the body, again in the Tax
+        #      Summary table) — items + ONE copy + round-off reach the total.
+        # The bill's own arithmetic tells them apart. Reading 2 as 1 doubles
+        # the GST (10% for a 5% bill), so when the totals can't arbitrate,
+        # keep the old pair reading; when one copy fits better, keep one.
+        base = _taxable_base(out)
+        keep_single = False
+        if base is not None and out.total_minor is not None:
+            t0 = gst_pair[0].amount_minor
+            ro = out.round_off_minor or 0
+            halves_gap = abs(base + 2 * t0 + ro - out.total_minor)
+            single_gap = abs(base + t0 + ro - out.total_minor)
+            keep_single = single_gap < halves_gap
+        if keep_single:
+            # one tax printed twice: the second copy is a re-print, not a twin
+            out.taxes = [t for t in out.taxes if t is not gst_pair[1]]
+        else:
+            # "C GST" / "S GST" with the C or S lost to OCR: two identical GST
+            # lines at the same rate are the CGST/SGST pair on an Indian bill.
+            gst_pair[0].component = "CGST"
+            gst_pair[1].component = "SGST"
     # One half misread: CGST and SGST always share a rate.
     rates = {t.component: t.rate_bp for t in out.taxes if t.rate_bp}
     for t in out.taxes:
@@ -458,6 +479,25 @@ def parse_receipt(lines: list[OcrLine], currency: str = "INR") -> ParsedReceipt:
             slack = 2 if exp >= 2 else (1 if exp == 1 else 0)
             if abs(pair[0].amount_minor + pair[1].amount_minor - tax_total[0]) > slack:
                 out.warnings.append("The two tax halves don't add up to the bill's Total GST line. Check them.")
+    # Messy real-world bills: the printed tax lines don't fit the bill's own
+    # totals — the shop charged one GST and printed another, or taxed only
+    # some items while printing the full rate. The printed TOTAL is what the
+    # person actually paid and what SplitMate splits, so when the parts
+    # don't reach it, say so instead of silently trusting them. (When the
+    # total already equals items + round-off, the prices are tax-inclusive:
+    # the tax line is information, not a missing part.)
+    base = _taxable_base(out)
+    if base is not None and out.total_minor is not None and not all(
+        i.source == "whole bill" for i in out.items
+    ):
+        slack = max(2 * 10**exp, out.total_minor // 100)
+        bare = abs(base + (out.round_off_minor or 0) - out.total_minor)
+        if bare > slack:
+            parts = base + sum(t.amount_minor for t in out.taxes) + (out.round_off_minor or 0)
+            if abs(parts - out.total_minor) > slack:
+                out.warnings.append(
+                    "The bill's tax lines don't match its own total. The printed total is what gets split — check the tax lines."
+                )
     _check(out)
     return out
 
@@ -471,7 +511,7 @@ DISH_WORDS = frozenset("""
 aalu achar aloo and auto baati basmati bhatura bhindi biryani bisleri
 bowl burger butter buttermilk
 cab chai cheese chilli chole chowmein chutney coffee cola combo
-curd curry clear
+curd curry clear cream cup cone candy chocolate
 dal dosa dosai double egg eggs
 fare french fries fry fuel full
 gajar ghee gobi golgappa gravy green gulab
@@ -479,20 +519,20 @@ handi halwa half honey hot
 ice idli idly iced jamun jalebi jeera juice
 ka kabab kebab ke kheer kulcha kulfi kofta korma
 lassi lemon lentil litre liter litchi
-maggi malai makhani manchurian masala medium meals methi milk mineral momo momos
+maggi malai makhani manchurian masala max medium meals methi milk mineral momo momos munch
 mughlai mutton mutter
 naan noodle noodles
-ola oil omlette omelette onion
+ola oil omlette omelette onion oreo
 pakoda pakoda pakora paneer papad papadum parantha paratha pasta patty
 pickle plain pizza pohe poha poori potato pulao pulav punjabi petrol
 raita rabdi rasam rice ride roll rolls roti
-sabzi sambar samosa sandwich schezwan shake shikanji shorba singhada soup
+sabzi sambar samosa sandwich schezwan scoop shake shikanji shorba singhada soup star
 special spring stuffed sweet
 tandoori tawa taxi thali tikka toast tomato toll train tandoor
 uber upma uttapam
 vada vadai veg vegetable chicken fish prawn salad
 water wheat white with
-yogurt
+toffee wafer yogurt
 """.split())
 
 _CONNECTORS = frozenset("and or with ka ki ke in no the".split())
@@ -612,6 +652,7 @@ def _item_from_row(label: str, amount: int, row: str, exp: int) -> ParsedItem:
     name = re.sub(r"(?:\s+[x×]?\s*\d[\d,]*(?:\.\d{1,2})?\s*[/\-]?\s*)+$", "", label).strip(" :.-x×/") or label
     nums = re.findall(r"\d[\d,]*(?:\.\d{1,2})?", label[len(name):])
     qty_milli, unit, confidence = 1000, amount, 70
+    columns_trusted = False  # a printed qty x rate column that multiplied out
 
     def small_int(t: str) -> int | None:
         return int(t) if t.isdigit() and 0 < int(t) <= 99 else None
@@ -628,6 +669,7 @@ def _item_from_row(label: str, amount: int, row: str, exp: int) -> ParsedItem:
         q = int(v_q) if v_q is not None and v_q == int(v_q) and 0 < v_q <= 99 else None
         if q and rate is not None and rate * q == amount:
             qty_milli, unit, confidence = q * 1000, rate, 95
+            columns_trusted = True
         else:
             confidence = 50  # numbers present but they don't multiply out: needs a look
     elif len(nums) == 1:
@@ -647,11 +689,27 @@ def _item_from_row(label: str, amount: int, row: str, exp: int) -> ParsedItem:
         confidence = min(confidence, 40)
     else:
         # Handwritten "2 Roti 24": the count before the name, no rate printed.
+        # A printed qty column that multiplied out wins — a leading digit can
+        # also be a brand ("5 STAR OREO  1  45.00  45.00"), not a count.
         lead = re.match(r"^(\d{1,2})\s+(\D.*)$", name)
-        if lead and (q := small_int(lead.group(1))) and 2 <= q <= 20 and amount % q == 0 and amount // q >= 100:
+        if not columns_trusted and lead and (q := small_int(lead.group(1))) and 2 <= q <= 20 and amount % q == 0 and amount // q >= 100:
             name = lead.group(2).strip()
             qty_milli, unit, confidence = q * 1000, amount // q, max(confidence, 70)
     return ParsedItem(name=name[:120], quantity_milli=qty_milli, unit_price_minor=unit, amount_minor=amount, confidence=confidence, source=row)
+
+def _taxable_base(out: ParsedReceipt) -> int | None:
+    """What the bill's taxes sit on and its total is reached from: the
+    printed subtotal (more reliable than re-adding items) or the items,
+    minus discounts, plus extra charges. None when nothing item-like was
+    read — then totals can't arbitrate anything."""
+    base = out.subtotal_minor
+    if base is None:
+        if not out.items:
+            return None
+        base = sum(i.amount_minor for i in out.items)
+    base += sum(c.amount_minor for c in out.charges) - sum(d.amount_minor for d in out.discounts)
+    return base
+
 
 def _check(out: ParsedReceipt) -> None:
     items_total = sum(i.amount_minor for i in out.items)

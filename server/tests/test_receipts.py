@@ -372,3 +372,83 @@ def test_half_rate_comes_from_total_gst_when_missing():
     r = parse_receipt(lines("Dhaba", "Biryani 800.00", "SGST 19.50", "Total GST(5%) 39.00"), "INR")
     assert {t.component for t in r.taxes} == {"CGST", "SGST"}
     assert all(t.rate_bp == 250 for t in r.taxes)
+
+
+def test_same_tax_printed_twice_is_not_a_cgst_sgst_pair():
+    """A counter bill re-prints the body's GST line in its Tax Summary table.
+    Reading the two identical lines as a CGST/SGST pair doubled the GST to
+    10%; the bill's own totals (items + tax + round-off = 118.00) say only
+    one copy is real. The shop even charged a different GST than it printed
+    (2.50, only the ice cream is taxed; the chocolates are MRP-inclusive) --
+    so the warning says the tax lines don't fit, and the total is the truth."""
+    r = parse_receipt(
+        lines(
+            "5 STAR OREO  1  45.00  45.00",
+            "ICE CREAM CUP  1  50.00  50.00",
+            "MUNCH MAX  1  20.00  20.00",
+            "ITEMS: 115.00",
+            "GST (5%) On 111.90  5.60",
+            "NET TOTAL  117.50",
+            "(Round off)  0.50",
+            "GST 5%  .11.90  5.60",
+            "Payable Amt. 118.00",
+        ),
+        "INR",
+    )
+    assert [(i.name, i.quantity_milli, i.unit_price_minor, i.amount_minor) for i in r.items] == [
+        ("5 Star Oreo", 1000, 4500, 4500),
+        ("Ice Cream Cup", 1000, 5000, 5000),
+        ("Munch Max", 1000, 2000, 2000),
+    ]
+    assert [(t.component, t.rate_bp, t.amount_minor) for t in r.taxes] == [("GST", 500, 560)]
+    assert r.round_off_minor == 50 and r.total_minor == 11800
+    assert any("don't match" in w for w in r.warnings)
+
+
+def test_identical_gst_pair_is_still_the_halves_when_the_bill_adds_up():
+    """The other reading of two identical GST lines: a real CGST/SGST pair
+    whose C and S were lost to OCR. There BOTH copies are needed to reach
+    the printed total, so the pair is kept (and the app applies 2 x 2.5%)."""
+    r = parse_receipt(lines("Biryani  800.00", "GST 2.5%  19.50", "GST 2.5%  19.50", "TOTAL  839.00"), "INR")
+    assert [(t.component, t.rate_bp, t.amount_minor) for t in r.taxes] == [
+        ("CGST", 250, 1950),
+        ("SGST", 250, 1950),
+    ]
+
+
+def test_identical_gst_pair_with_no_total_keeps_the_old_pair_reading():
+    """Nothing on the bill can arbitrate: keep the CGST/SGST assumption."""
+    r = parse_receipt(lines("Biryani  800.00", "GST 2.5%  19.50", "GST 2.5%  19.50"), "INR")
+    assert {t.component for t in r.taxes} == {"CGST", "SGST"}
+
+
+def test_brand_name_starting_with_a_digit_is_not_a_count():
+    """'5 Star' is the chocolate; the printed qty column already says 1,
+    so the leading digit must not become the quantity."""
+    r = parse_receipt(lines("5 STAR OREO  1  45.00  45.00", "Total  45.00"), "INR")
+    assert [(i.name, i.quantity_milli, i.unit_price_minor, i.amount_minor) for i in r.items] == [
+        ("5 Star Oreo", 1000, 4500, 4500)
+    ]
+
+
+def test_real_takeaway_bill_tax_summary_reprint_through_uniocr():
+    """Second real photo from the same shop, this time the takeaway counter:
+    the Tax Summary table re-prints the GST line and the '5%' lost its % to
+    OCR ('(58)'). One 5% GST must survive, the three items must read right,
+    and the payable 118.00 is the total -- with the warning that the shop's
+    own tax lines don't fit that total."""
+    import json
+    from pathlib import Path
+
+    raw = json.loads((Path(__file__).parent / "fixtures" / "ocr_royal_takeaway_uniocr.json").read_text(encoding="utf-8"))
+    keep = ("text", "left", "top", "width", "height")
+    r = parse_receipt([OcrLine(**{k: d[k] for k in keep}) for d in raw], "INR")
+    assert [(i.name, i.quantity_milli, i.unit_price_minor, i.amount_minor) for i in r.items] == [
+        ("5 Star Oreo", 1000, 4500, 4500),
+        ("Ice Cream Cup", 1000, 5000, 5000),
+        ("Munch Max", 1000, 2000, 2000),
+    ]
+    assert r.subtotal_minor == 11500
+    assert [(t.component, t.rate_bp, t.amount_minor) for t in r.taxes] == [("GST", 500, 560)]
+    assert r.round_off_minor == 50 and r.total_minor == 11800
+    assert any("don't match" in w for w in r.warnings)
