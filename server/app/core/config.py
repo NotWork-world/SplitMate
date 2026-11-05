@@ -44,9 +44,9 @@ class Settings(BaseSettings):
 
     # In-app update check, served on /api/health as "app". The phone app compares
     # its own package version against app_latest_version and offers the APK at
-    # app_apk_url. Bump BOTH with every phone release (the version is the mobile
-    # package.json one, e.g. "0.7.0"; the URL is the release asset).
-    app_latest_version: str = "0.7.0"
+    # app_apk_url. Keep BOTH in lockstep with the GitHub release tag (v1.6.0 =
+    # mobile package.json "1.6.0" = the version in the update notification).
+    app_latest_version: str = "1.6.0"
     app_apk_url: str = (
         "https://github.com/NotWork-world/SplitMate/releases/download/v1.6.0/SplitMate-v1.6.0-arm64.apk"
     )
