@@ -507,3 +507,14 @@ class PushToken(TimestampMixin, Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     token: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
     platform: Mapped[str] = mapped_column(String(16), default="android", nullable=False)
+
+
+class AppMeta(Base):
+    """Small key/value store for server bookkeeping (e.g. which app version
+    users were last told about, so an update broadcast fires once)."""
+
+    __tablename__ = "app_meta"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)

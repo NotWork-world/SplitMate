@@ -106,6 +106,66 @@ def describe(type_: str, actor: str, data: dict, group: str) -> tuple[str, str] 
     return (group or "SplitMate", text) if text else None
 
 
+def broadcast_update(version: str) -> None:
+    """One 'new version' push to every registered phone. This is how people on
+    OLDER app versions hear about an update: their app has no update card of
+    its own, but it does get FCM notifications. Fired from app startup when
+    the configured app_latest_version is one nobody was told about yet; runs
+    on the push pool so boot never waits on FCM."""
+    if not enabled():
+        return
+    _pool.submit(_broadcast_update_sync, version)
+
+
+def _broadcast_update_sync(version: str) -> None:
+    from ..db import SessionLocal
+    from ..models import AppMeta, PushToken
+
+    info = _service_account()
+    if not info:
+        return
+    db = SessionLocal()
+    try:
+        row = db.get(AppMeta, "update_broadcast_version")
+        if row is not None and row.value == version:
+            return  # already told everyone about this one
+        token = _access_token(info)
+        url = f"https://fcm.googleapis.com/v1/projects/{info['project_id']}/messages:send"
+        dead: list[str] = []
+        sent = 0
+        for phone in db.scalars(select(PushToken.token)):
+            body = {
+                "message": {
+                    "token": phone,
+                    "notification": {
+                        "title": "SplitMate has an update",
+                        "body": f"Version {version} is out. Bills read better and the app can now update itself. Get it from the SplitMate release page.",
+                    },
+                    "data": {"type": "app.update", "version": version},
+                    "android": {"priority": "high", "notification": {"channel_id": "splitmate"}},
+                }
+            }
+            r = requests.post(url, json=body, headers={"Authorization": f"Bearer {token}"}, timeout=10)
+            if r.status_code in (400, 404) and ("UNREGISTERED" in r.text or "INVALID_ARGUMENT" in r.text):
+                dead.append(phone)
+            elif r.status_code >= 300:
+                log.warning("FCM update broadcast failed: %s %s", r.status_code, r.text[:200])
+            else:
+                sent += 1
+        if dead:
+            db.execute(delete(PushToken).where(PushToken.token.in_(dead)))
+        if row is None:
+            db.add(AppMeta(key="update_broadcast_version", value=version))
+        else:
+            row.value = version
+        db.commit()
+        log.info("Update broadcast for %s sent to %d phone(s)", version, sent)
+    except Exception:  # a broadcast problem must never keep the server from booting
+        log.exception("Update broadcast failed")
+    finally:
+        db.close()
+
+
 def _deliver(pending: list[tuple[uuid.UUID, uuid.UUID]]) -> None:
     from ..db import SessionLocal
     from ..models import ActivityEvent, Group, PushToken, User

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import asynccontextmanager
 from urllib.parse import quote
 
 from fastapi import FastAPI
@@ -20,6 +21,16 @@ def create_app() -> FastAPI:
     settings.check_production_safety()
     logging.basicConfig(level=logging.INFO)
 
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        # People on older app versions have no update card, but they do get push
+        # notifications: when this deploy ships a new app_latest_version, every
+        # registered phone hears about it once (app_meta remembers who was told).
+        from .integrations import push
+
+        push.broadcast_update(settings.app_latest_version)
+        yield
+
     app = FastAPI(
         title="SplitMate API",
         version=__version__,
@@ -27,6 +38,7 @@ def create_app() -> FastAPI:
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         redoc_url=None,
+        lifespan=lifespan,
     )
     errors.install(app)
     if settings.cors_origins:
