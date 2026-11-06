@@ -44,11 +44,14 @@ class Settings(BaseSettings):
 
     # In-app update check, served on /api/health as "app". The phone app compares
     # its own package version against app_latest_version and offers the APK at
-    # app_apk_url. Keep BOTH in lockstep with the GitHub release tag (v1.6.0 =
-    # mobile package.json "1.6.0" = the version in the update notification).
-    app_latest_version: str = "1.6.0"
+    # app_apk_url. Keep ALL THREE in lockstep, every release, no exceptions:
+    # the GitHub tag v1.7.0 = mobile package.json "1.7.0" = this value = the
+    # APK filename. One release, one version number everywhere. Never reuse a
+    # version number (GitHub's CDN caches assets by filename; a replaced file
+    # under the same name can serve stale content to phones).
+    app_latest_version: str = "1.7.0"
     app_apk_url: str = (
-        "https://github.com/NotWork-world/SplitMate/releases/download/v1.6.0/SplitMate-v1.6.0-arm64.apk"
+        "https://github.com/NotWork-world/SplitMate/releases/download/v1.7.0/SplitMate-v1.7.0-arm64.apk"
     )
 
     @field_validator("database_url")

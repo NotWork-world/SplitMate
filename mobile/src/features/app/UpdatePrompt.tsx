@@ -13,16 +13,20 @@ const RELEASES_URL = 'https://github.com/NotWork-world/SplitMate/releases/latest
 
 /**
  * "Update SplitMate" card, shown over the app (like the offline banner) when
- * the server reports a newer app version than the one running. Update: the
- * APK downloads with a progress readout, then Android's own installer opens.
- * If the direct download isn't possible (offline, private release), the
- * releases page opens in the browser instead.
+ * the server reports a newer app version than the one running. One tap
+ * downloads the APK (kept in the cache for that version, so a retry or a
+ * cancelled install doesn't download it again) and hands it to Android's own
+ * installer - the person confirms there, the way every app installs.
+ *
+ * Errors are said plainly, never guessed: a missing internet connection is a
+ * retry note, the one-time "allow installs" screen points back at the card.
  */
 export function UpdatePrompt() {
   const {colors} = useTheme();
   const insets = useSafeAreaInsets();
   const health = useHealthQuery();
   const [dismissed, setDismissed] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [pct, setPct] = useState<number | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
@@ -34,41 +38,57 @@ export function UpdatePrompt() {
     return null;
   }
 
-  const download = async () => {
-    if (!apkUrl || pct !== null) {
+  const update = async () => {
+    if (!latest || !apkUrl || busy) {
       return;
     }
     setNote(null);
-    setPct(0);
+    setBusy(true);
+    // The APK is cached per version: a second tap (or a cancelled install)
+    // goes straight to the installer instead of downloading all over again.
+    const dest = `${RNFS.CachesDirectoryPath}/SplitMate-${latest}.apk`;
     try {
-      const dest = `${RNFS.CachesDirectoryPath}/SplitMate-update.apk`;
-      const job = RNFS.downloadFile({
-        fromUrl: apkUrl,
-        toFile: dest,
-        progressInterval: 300,
-        progress: r => {
-          if (r.contentLength > 0) {
-            setPct(Math.min(99, Math.round((r.bytesWritten / r.contentLength) * 100)));
-          }
-        },
-      });
-      const res = await job.promise;
-      if (!res.statusCode || res.statusCode >= 400) {
-        throw new Error(`download failed (${res.statusCode ?? 'no status'})`);
+      if (!(await RNFS.exists(dest))) {
+        setPct(0);
+        const res = await RNFS.downloadFile({
+          fromUrl: apkUrl,
+          toFile: dest,
+          progressInterval: 300,
+          progress: r => {
+            if (r.contentLength > 0) {
+              setPct(Math.min(99, Math.round((r.bytesWritten / r.contentLength) * 100)));
+            }
+          },
+        }).promise;
+        if (!res.statusCode || res.statusCode >= 400) {
+          throw new Error(`download failed (${res.statusCode ?? 'no status'})`);
+        }
       }
       setPct(100);
       await installApk(dest);
-      setPct(null); // the installer screen is up; stay quiet behind it
-    } catch {
-      // Couldn't fetch/install here (offline, release not public): the release
-      // page in the browser downloads the same APK with one more tap.
+      // The installer is up; the person confirms the update on that screen.
+      setNote('Confirm the install on the screen that just opened.');
+    } catch (e) {
+      const err = e as {code?: string; message?: string};
+      if (err.code === 'permission_needed') {
+        // Android's one-time "allow installs from this app" screen is open.
+        setNote('Allow installs for SplitMate there, come back and tap Update again.');
+      } else if (err.message?.includes('store')) {
+        // A platform whose updates come from a store, not an APK.
+        setNote('Opening the download page instead.');
+        try {
+          await Linking.openURL(RELEASES_URL);
+        } catch {}
+      } else {
+        setNote("The update didn't download. Check your internet connection and try again.");
+      }
+    } finally {
       setPct(null);
-      setNote('Opening the download page instead — install from there.');
-      try {
-        await Linking.openURL(RELEASES_URL);
-      } catch {}
+      setBusy(false);
     }
   };
+
+  const label = !busy ? 'Update' : pct === null ? 'Preparing…' : pct < 100 ? `Downloading ${pct}%` : 'Opening the installer…';
 
   return (
     <View
@@ -83,17 +103,17 @@ export function UpdatePrompt() {
         </Pressable>
       </View>
       <Text variant="small" tone="muted">
-        Version {latest} is out{pct === null ? ' — the update downloads and installs by itself.' : ''}
+        Version {latest} is ready — one tap downloads it, and Android asks you to confirm the install.
       </Text>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Update now"
-        onPress={download}
-        disabled={pct !== null}
-        style={({pressed}) => [styles.update, {backgroundColor: pressed ? colors.surfacePressed : colors.highlight, opacity: pct === 100 ? 0.6 : 1}]}>
+        onPress={update}
+        disabled={busy}
+        style={({pressed}) => [styles.update, {backgroundColor: pressed ? colors.surfacePressed : colors.highlight, opacity: busy ? 0.7 : 1}]}>
         <ArrowUpRight size={15} color={colors.highlightText} />
         <Text variant="smallStrong" color={colors.highlightText}>
-          {pct === null ? 'Update' : pct < 100 ? `Downloading ${pct}%` : 'Opening installer…'}
+          {label}
         </Text>
       </Pressable>
       {note ? (

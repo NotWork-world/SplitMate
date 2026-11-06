@@ -138,8 +138,8 @@ def _broadcast_update_sync(version: str) -> None:
                 "message": {
                     "token": phone,
                     "notification": {
-                        "title": "SplitMate has an update",
-                        "body": f"Version {version} is out. Bills read better and the app can now update itself. Get it from the SplitMate release page.",
+                        "title": "SplitMate update available",
+                        "body": f"Version {version} is ready. Open SplitMate and tap Update on the card to get it.",
                     },
                     "data": {"type": "app.update", "version": version},
                     "android": {"priority": "high", "notification": {"channel_id": "splitmate"}},
