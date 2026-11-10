@@ -28,25 +28,27 @@ def verify_password(password: str, password_hash: str | None) -> bool:
         return False
 
 
-def create_access_token(user_id: uuid.UUID) -> tuple[str, int]:
+def create_access_token(user_id: uuid.UUID, epoch: int = 0) -> tuple[str, int]:
     s = get_settings()
     now = datetime.now(timezone.utc)
     ttl = s.access_token_minutes * 60
     token = jwt.encode(
-        {"sub": str(user_id), "iat": now, "exp": now + timedelta(seconds=ttl), "typ": "access"},
+        {"sub": str(user_id), "ep": epoch, "iat": now, "exp": now + timedelta(seconds=ttl), "typ": "access"},
         s.jwt_secret,
         algorithm="HS256",
     )
     return token, ttl
 
 
-def decode_access_token(token: str) -> uuid.UUID | None:
+def decode_access_token(token: str) -> tuple[uuid.UUID, int] | None:
+    """Returns (user_id, session_epoch), or None when the token is invalid.
+    Tokens issued before session epochs existed decode as epoch 0."""
     try:
         payload = jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"])
         if payload.get("typ") != "access":
             return None
-        return uuid.UUID(payload["sub"])
-    except (jwt.PyJWTError, KeyError, ValueError):
+        return uuid.UUID(payload["sub"]), int(payload.get("ep", 0))
+    except (jwt.PyJWTError, KeyError, ValueError, TypeError):
         return None
 
 

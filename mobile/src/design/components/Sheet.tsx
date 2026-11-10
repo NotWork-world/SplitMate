@@ -1,5 +1,5 @@
 import React from 'react';
-import {Modal, Pressable, ScrollView, StyleSheet, View} from 'react-native';
+import {Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
 import {radius, space} from '../tokens';
@@ -23,6 +23,7 @@ export function Sheet({
   const {colors} = useTheme();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardHeight();
+  const {height} = useWindowDimensions();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <View style={{flex: 1}}>
@@ -39,7 +40,7 @@ export function Sheet({
               {title}
             </Text>
           ) : null}
-          <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" style={{maxHeight: keyboard ? 300 : 520}}>
+          <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" style={{maxHeight: keyboard ? 300 : Math.round(height * 0.75)}}>
             {children}
           </ScrollView>
           {footer ? <View style={{marginTop: space.lg, gap: space.sm}}>{footer}</View> : null}

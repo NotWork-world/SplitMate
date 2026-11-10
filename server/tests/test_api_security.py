@@ -166,3 +166,42 @@ def test_production_refuses_default_secrets(monkeypatch):
         raise AssertionError("should refuse")
     except RuntimeError as exc:
         assert "SPLITMATE_JWT_SECRET" in str(exc)
+
+
+def test_single_device_login_kicks_the_previous_device(make_user):
+    a = make_user("Asha")  # device 1 (signed in at register time)
+    # Device 2 signs in with the same account...
+    second = a.client.post("/api/auth/login", json={"email": a.email, "password": "correct-horse-9"}).json()
+    # ...so device 1's access token dies immediately...
+    r = a.client.get("/api/me", headers={"Authorization": f"Bearer {a.token}"})
+    assert r.status_code == 401 and r.json()["error"]["code"] == "signed_in_elsewhere"
+    # ...and its refresh token can't sign back in.
+    assert a.client.post("/api/auth/refresh", json={"refresh_token": a.refresh}).status_code == 401
+    # Device 2 works, and refreshing keeps its own session alive (no epoch bump on refresh).
+    assert a.client.get("/api/me", headers={"Authorization": f"Bearer {second['access_token']}"}).status_code == 200
+    r = a.client.post("/api/auth/refresh", json={"refresh_token": second["refresh_token"]})
+    assert r.status_code == 200
+    refreshed = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    assert a.client.get("/api/me", headers=refreshed).status_code == 200
+    # Device 3 signs in: device 2 is kicked the same way.
+    third = a.client.post("/api/auth/login", json={"email": a.email, "password": "correct-horse-9"}).json()
+    assert a.client.get("/api/me", headers=refreshed).status_code == 401
+    assert a.client.get("/api/me", headers={"Authorization": f"Bearer {third['access_token']}"}).status_code == 200
+
+
+def test_google_sign_in_kicks_the_previous_device(client):
+    def fake(token):
+        if token == "good-token-123":
+            return GoogleIdentity(sub="g-1", email="gg@example.com", email_verified=True, name="Gita")
+        return None
+
+    set_verifier(fake)
+    try:
+        first = client.post("/api/auth/google", json={"id_token": "good-token-123"}).json()
+        second = client.post("/api/auth/google", json={"id_token": "good-token-123"}).json()
+        assert second["user"]["id"] == first["user"]["id"]
+        assert client.get("/api/me", headers={"Authorization": f"Bearer {first['access_token']}"}).status_code == 401
+        assert client.post("/api/auth/refresh", json={"refresh_token": first["refresh_token"]}).status_code == 401
+        assert client.get("/api/me", headers={"Authorization": f"Bearer {second['access_token']}"}).status_code == 200
+    finally:
+        set_verifier(verify_with_google)

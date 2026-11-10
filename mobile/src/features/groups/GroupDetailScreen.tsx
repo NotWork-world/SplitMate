@@ -216,7 +216,60 @@ export function GroupDetailScreen({route, navigation}: AppScreen<'GroupDetail'>)
             ) : null}
 
             {tab === 'people' ? (
-              <Card padded={false} style={{paddingHorizontal: space.md, marginTop: space.md}}>
+              <>
+                {/* Whom to pay and who owes you, after the group's own autocut. */}
+                {balances.data?.balances.length ? (
+                  <Card style={{marginTop: space.md, gap: space.xs}}>
+                    <Text variant="bodyStrong">Who pays whom in this group</Text>
+                    {balances.data.balances.flatMap(cur => {
+                      const mine = cur.suggestions.filter(s => s.from.is_me || s.to.is_me);
+                      if (!mine.length) {
+                        return [
+                          <Text key={cur.currency} variant="small" tone="muted">
+                            Everyone is settled in {cur.currency}.
+                          </Text>,
+                        ];
+                      }
+                      return mine.map((s, i) => {
+                        const iPay = s.from.is_me;
+                        const other = iPay ? s.to : s.from;
+                        return (
+                          <Pressable
+                            key={`${cur.currency}-${i}`}
+                            accessibilityRole="button"
+                            onPress={() =>
+                              navigation.navigate('SettleUp', {
+                                groupId,
+                                memberId: other.id,
+                                currency: cur.currency,
+                                amount: s.amount_minor,
+                                mode: iPay ? 'record' : 'request',
+                              })
+                            }
+                            style={({pressed}) => ({
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: space.md,
+                              paddingVertical: space.xs,
+                              opacity: pressed ? 0.7 : 1,
+                            })}>
+                            <Avatar name={other.display_name} hue={other.avatar_hue} size={32} />
+                            <View style={{flex: 1}}>
+                              <Text variant="bodyStrong" numberOfLines={1}>
+                                {iPay ? `You pay ${other.display_name}` : `${other.display_name} pays you`}
+                              </Text>
+                              <Text variant="caption" tone={iPay ? 'negative' : 'positive'}>
+                                after autocut · tap to {iPay ? 'record it' : 'request it'}
+                              </Text>
+                            </View>
+                            <Money minor={s.amount_minor} currency={cur.currency} variant="amountSmall" />
+                          </Pressable>
+                        );
+                      });
+                    })}
+                  </Card>
+                ) : null}
+                <Card padded={false} style={{paddingHorizontal: space.md, marginTop: space.md}}>
                 {gr.members.map(m => (
                   <View key={m.id} style={{flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md}}>
                     <Avatar name={m.display_name} hue={m.avatar_hue} size={38} />
@@ -238,7 +291,8 @@ export function GroupDetailScreen({route, navigation}: AppScreen<'GroupDetail'>)
                   onPress={() => navigation.navigate('GroupSettings', {groupId})}
                   style={{marginVertical: space.sm}}
                 />
-              </Card>
+                </Card>
+              </>
             ) : null}
             <View style={{height: space.xl, borderColor: colors.border}} />
           </>

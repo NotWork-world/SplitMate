@@ -51,6 +51,9 @@ class User(TimestampMixin, Base):
     username: Mapped[str | None] = mapped_column(String(20), unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(255))
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
+    # Single-device login (like payment apps): bumped on every sign-in and carried inside
+    # access tokens, so signing in on a new device invalidates the previous device at once.
+    session_epoch: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     avatar_hue: Mapped[int] = mapped_column(Integer, default=260, nullable=False)
     upi_id: Mapped[str | None] = mapped_column(String(100))
     # The exact text of the person's own UPI QR (upi://pay?...), so it can be shown unchanged.

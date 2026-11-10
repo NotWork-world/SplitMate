@@ -36,11 +36,55 @@ export function BalancesScreen({navigation}: AppScreen<'Balances'>) {
   return (
     <Screen header={<Header title="Balances" subtitle="Who owes whom, and why" />} refreshing={q.isFetching && !q.isLoading} onRefresh={q.refetch}>
       <QueryView query={q}>
-        {data =>
-          data.groups.length === 0 ? (
+        {data => {
+          // Net per person across groups (autocut), keyed by their SplitMate account and
+          // currency. Shown only when it actually merges someone across 2+ groups.
+          const netRows = (() => {
+            const per = new Map<string, {key: string; name: string; hue: number; amount: number; currency: string; groups: number}>();
+            for (const g of data.groups) {
+              for (const p of g.people) {
+                if (!p.member.user_id) {
+                  continue; // friends without an account can't be netted across groups
+                }
+                const key = `${p.member.user_id}-${g.currency}`;
+                const row = per.get(key);
+                if (row) {
+                  row.amount += p.amount_minor;
+                  row.groups += 1;
+                } else {
+                  per.set(key, {key, name: p.member.display_name, hue: p.member.avatar_hue, amount: p.amount_minor, currency: g.currency, groups: 1});
+                }
+              }
+            }
+            const rows = [...per.values()].filter(r => r.amount !== 0).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+            return rows.some(r => r.groups > 1) ? rows : [];
+          })();
+          return data.groups.length === 0 ? (
             <EmptyState emoji="✅" title="You're all settled up" body="When someone owes you, or you owe someone, it shows up here." />
           ) : (
             <>
+              {netRows.length ? (
+                <View style={{marginBottom: space.md}}>
+                  <SectionTitle title="Everyone, netted across groups" />
+                  <Card padded={false} style={{paddingHorizontal: space.md}}>
+                    {netRows.map(r => (
+                      <View key={r.key} style={{flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md}}>
+                        <Avatar name={r.name} hue={r.hue} size={38} />
+                        <View style={{flex: 1}}>
+                          <Text variant="bodyStrong">{r.name}</Text>
+                          <Text variant="small" tone={r.amount > 0 ? 'positive' : 'negative'}>
+                            {r.amount > 0 ? 'owes you' : 'you owe'} · {r.groups > 1 ? `net across ${r.groups} groups` : 'one group'} · settle per group below
+                          </Text>
+                        </View>
+                        <Money minor={r.amount} currency={r.currency} signed variant="amount" />
+                      </View>
+                    ))}
+                  </Card>
+                  <Text variant="caption" tone="faint" style={{marginTop: space.xs}}>
+                    What would actually change hands if you each paid once (same currency). Money is still settled group by group below.
+                  </Text>
+                </View>
+              ) : null}
               {data.groups.map(g => (
                 <View key={`${g.group_id}-${g.currency}`}>
                   <SectionTitle
@@ -129,8 +173,8 @@ export function BalancesScreen({navigation}: AppScreen<'Balances'>) {
                 Balances are worked out from finalised expenses and confirmed repayments only. Drafts and unconfirmed payments never count.
               </Text>
             </>
-          )
-        }
+          );
+        }}
       </QueryView>
     </Screen>
   );

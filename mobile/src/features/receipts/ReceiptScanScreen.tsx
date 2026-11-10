@@ -225,14 +225,15 @@ export function ReceiptScanScreen({route, navigation}: AppScreen<'ReceiptScan'>)
     return {next, itemCount: items.length};
   };
 
-  /** A small gap to the printed total is the shop's rounding or untaxed items: share it out
-   *  straight away instead of asking every time. A big gap usually means a misread price,
-   *  so leave that for the person to check on the review screen. */
+  /** A small gap to the printed total (up to ₹20 or 2% of the bill) is the shop's rounding
+   *  or small untaxed items: share it out straight away so the split shows exactly the
+   *  printed bill total. A big gap usually means a misread price, so leave that for the
+   *  person to check on the review screen. */
   const withAutoMatch = (base: ExpensePayload, next: Partial<ExpensePayload>) => {
     const merged = {...base, ...next} as ExpensePayload;
     const fix = matchReceiptPatch(merged);
     const gap = merged.receipt_total_minor ? Math.abs(preview(merged).result.total - merged.receipt_total_minor) : 0;
-    const autoMatched = !!fix && gap > 0 && gap <= Math.max(500, Math.round((merged.receipt_total_minor ?? 0) * 0.02));
+    const autoMatched = !!fix && gap > 0 && gap <= Math.max(2000, Math.round((merged.receipt_total_minor ?? 0) * 0.02));
     return {patch: autoMatched ? {...next, ...fix} : next, gap, autoMatched};
   };
 
@@ -376,6 +377,9 @@ export function ReceiptScanScreen({route, navigation}: AppScreen<'ReceiptScan'>)
               <Button label="Take photo" icon={Camera} style={{flex: 1}} onPress={() => pick(true)} />
               <Button label="Choose photo" icon={ImagePlus} variant="secondary" style={{flex: 1}} onPress={() => pick(false)} />
             </View>
+            <Text variant="smallStrong" tone="warning" align="center" style={{marginTop: space.md, maxWidth: 320}}>
+              Click the photo in proper bright light — no shadow or glare on the bill.
+            </Text>
             <Text variant="caption" tone="faint" style={{marginTop: space.md}}>
               Works for restaurant bills, auto-rickshaw receipts, ride screenshots — any bill.
             </Text>

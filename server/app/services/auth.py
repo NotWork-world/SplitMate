@@ -63,7 +63,7 @@ def _ensure_personal_group(db: Session, user: User) -> None:
 
 
 def issue_tokens(db: Session, user: User, family_id: uuid.UUID | None = None) -> TokenOut:
-    access, ttl = create_access_token(user.id)
+    access, ttl = create_access_token(user.id, user.session_epoch or 0)
     raw, digest = new_refresh_token()
     db.add(
         RefreshToken(
@@ -91,10 +91,20 @@ def register(db: Session, email: str, password: str, display_name: str) -> Token
     return issue_tokens(db, user)
 
 
+def _kick_other_devices(db: Session, user: User) -> None:
+    """One account, one signed-in device (like payment apps). Bump the session epoch so
+    every access token issued to previous devices stops working immediately, and retire
+    their refresh tokens so they can't sign back in. Refresh never calls this, so the
+    current device's session is untouched."""
+    user.session_epoch = (user.session_epoch or 0) + 1
+    revoke_all(db, user)
+
+
 def login(db: Session, email: str, password: str) -> TokenOut:
     user = db.scalar(select(User).where(User.email == email.lower(), User.deleted_at.is_(None)))
     if not verify_password(password, user.password_hash if user else None) or user is None:
         raise ApiError(401, "invalid_credentials", "Email or password is incorrect.")
+    _kick_other_devices(db, user)
     return issue_tokens(db, user)
 
 
@@ -112,6 +122,8 @@ def google_sign_in(db: Session, id_token: str) -> TokenOut:
             user.google_sub = ident.sub
     if user is not None and user.deleted_at is not None:
         raise ApiError(401, "account_deleted", "This account was deleted.")
+    if user is not None:
+        _kick_other_devices(db, user)
     if user is None:
         user = User(
             email=ident.email if ident.email_verified else None,

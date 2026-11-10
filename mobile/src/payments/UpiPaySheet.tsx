@@ -1,9 +1,18 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {Linking, Pressable, View} from 'react-native';
 import {ChevronRight} from 'lucide-react-native';
-import {Banner, Sheet, Text, radius, space, useTheme} from '../design';
+import {Banner, Button, Sheet, Text, radius, space, useTheme} from '../design';
 import QRCode from 'react-native-qrcode-svg';
+import {copyText} from '../native/clipboard';
 import {installedUpiApps, parseUpiQr, UPI_APPS, upiPayUrl, type UpiAppKey} from './upi';
+
+/**
+ * Banks cap payments that another app starts — a redirect into the UPI app, or a QR
+ * uploaded to it — at about ₹2,000 (the exact cap varies by bank). That's their rule,
+ * not something SplitMate can change. Above it, this sheet switches to a copy flow:
+ * the person pays from their own UPI app, which has no such cap.
+ */
+const BANK_REDIRECT_CAP = 2000;
 
 /**
  * Asks which UPI app to pay with, then opens that app on its pay screen with the
@@ -37,6 +46,8 @@ export function UpiPaySheet({
   const [installed, setInstalled] = useState<Set<UpiAppKey> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
+  const [copied, setCopied] = useState<'id' | 'amount' | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A stored QR is only a way to find the payee's UPI ID; the QR we show is always ours,
   // regenerated with the exact amount so it can never be paid wrong by mistake.
@@ -44,12 +55,28 @@ export function UpiPaySheet({
   const payeeId = upiId || fromQr?.upiId || '';
   const payeeName = fromQr?.name || name;
 
+  const amountNum = amount ? Number.parseFloat(amount) : NaN;
+  const overCap = Number.isFinite(amountNum) && amountNum > BANK_REDIRECT_CAP;
+
   useEffect(() => {
     if (visible) {
       setError(null);
-      installedUpiApps().then(setInstalled);
+      setShowQr(false);
+      setCopied(null);
+      if (!overCap) {
+        installedUpiApps().then(setInstalled);
+      }
     }
-  }, [visible]);
+  }, [visible, overCap]);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current) {
+        clearTimeout(copiedTimer.current);
+      }
+    },
+    [],
+  );
 
   const open = async (base: string, label: string) => {
     setError(null);
@@ -61,6 +88,69 @@ export function UpiPaySheet({
       setError(`${label} couldn't be opened. Is it installed?`);
     }
   };
+
+  const copy = async (what: 'id' | 'amount', text: string) => {
+    if (await copyText(text)) {
+      setCopied(what);
+      if (copiedTimer.current) {
+        clearTimeout(copiedTimer.current);
+      }
+      copiedTimer.current = setTimeout(() => setCopied(null), 2500);
+    } else {
+      setError("Couldn't copy automatically. Long-press the UPI ID above to copy it yourself.");
+    }
+  };
+
+  // Above the bank cap there's no point redirecting: the bank would refuse it. The
+  // person pays from their own UPI app instead, with the payee's ID copied from here.
+  if (overCap) {
+    return (
+      <Sheet visible={visible} onClose={onClose} title={`Pay ${payeeName} from your own UPI app`}>
+        <Banner
+          tone="info"
+          title="Banks refuse payments above ₹2,000 that start from another app"
+          body="That cap doesn't apply when you pay from your own UPI app. Copy the UPI ID below, open your UPI app, paste it and pay."
+        />
+        <View style={{marginTop: space.md, backgroundColor: colors.surfacePressed, borderRadius: radius.md, padding: space.md}}>
+          <Text variant="small" tone="muted">
+            Paying {payeeName}
+          </Text>
+          <Text variant="bodyStrong" selectable>
+            {payeeId}
+          </Text>
+          {amountLabel ? (
+            <Text variant="small" tone="muted" style={{marginTop: 4}}>
+              Amount: <Text variant="smallStrong">{amountLabel}</Text>
+            </Text>
+          ) : null}
+        </View>
+        <View style={{marginTop: space.md, gap: space.sm}}>
+          <Button
+            label={copied === 'id' ? 'UPI ID copied ✓' : 'Copy UPI ID'}
+            variant="food"
+            onPress={() => copy('id', payeeId)}
+            testID="upi-copy-id"
+          />
+          {amount ? (
+            <Button
+              label={copied === 'amount' ? 'Amount copied ✓' : 'Copy the amount'}
+              variant="secondary"
+              onPress={() => copy('amount', amount)}
+              testID="upi-copy-amount"
+            />
+          ) : null}
+        </View>
+        {error ? (
+          <View style={{marginTop: space.sm}}>
+            <Banner tone="negative" title={error} />
+          </View>
+        ) : null}
+        <Text variant="caption" tone="faint" style={{marginTop: space.md}}>
+          After paying, come back and tap "I paid" and paste the 12-digit UPI reference from the payment receipt — if {payeeName} has auto-verify on, it's confirmed instantly without asking them.
+        </Text>
+      </Sheet>
+    );
+  }
 
   return (
     <Sheet visible={visible} onClose={onClose} title="Pay with which app?">

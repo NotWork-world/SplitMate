@@ -17,10 +17,13 @@ from .models import Group, GroupMember, User
 def current_user(authorization: str | None = Header(default=None), db: Session = Depends(get_db)) -> User:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise ApiError(401, "unauthorized", "Please sign in.")
-    user_id = decode_access_token(authorization.split(" ", 1)[1].strip())
-    user = db.get(User, user_id) if user_id else None
+    decoded = decode_access_token(authorization.split(" ", 1)[1].strip())
+    user = db.get(User, decoded[0]) if decoded else None
     if user is None or user.deleted_at is not None:
         raise ApiError(401, "unauthorized", "Your session has expired. Please sign in again.")
+    if decoded[1] != user.session_epoch:
+        # One account, one device: a newer sign-in retired this token.
+        raise ApiError(401, "signed_in_elsewhere", "You were signed in on another device.")
     return user
 
 

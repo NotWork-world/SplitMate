@@ -4,6 +4,7 @@ import {useNavigation} from '@react-navigation/native';
 import Svg, {Circle, Line, Path} from 'react-native-svg';
 import {ArrowUpRight, Bell, ScanLine, Users, Utensils, Wallet} from 'lucide-react-native';
 import {useMyBalancesQuery, useSummaryQuery} from '../../api/endpoints';
+import type {MyBalances} from '../../api/types';
 import {Accent, Avatar, Button, IconButton, LogoMark, Screen, Text, radius, space, useTheme} from '../../design';
 import {formatMoney} from '../../money/currency';
 import {useAppSelector} from '../../store';
@@ -47,8 +48,11 @@ export function HomeScreen() {
 
       <QueryView query={q} loadingLabel="Loading your balances">
         {s => {
-          const owed = s.owed_to_me.find(b => b.currency === currency)?.amount_minor ?? 0;
-          const owe = s.i_owe.find(b => b.currency === currency)?.amount_minor ?? 0;
+          // Net per person across groups (autocut) once the breakdown is loaded, so the
+          // gauge shows what would really change hands instead of double-counted flows.
+          const netted = balances.data ? netPerPerson(balances.data, currency) : null;
+          const owed = netted ? netted.owed : (s.owed_to_me.find(b => b.currency === currency)?.amount_minor ?? 0);
+          const owe = netted ? netted.owe : (s.i_owe.find(b => b.currency === currency)?.amount_minor ?? 0);
           const net = owed - owe;
           return (
             <>
@@ -96,17 +100,87 @@ export function HomeScreen() {
 }
 
 /**
- * Who owes you and whom you owe, person by person (per group, because that's where a
- * payment is settled), largest first, each with a one-tap Settle.
+ * Net one person's balances across every group (autocut) in a currency: owing you ₹25 in
+ * one group while you owe them ₹100 in another is one "you pay ₹75". Returns the sums
+ * over the per-person nets so the gauge doesn't double-count cancelled-out flows.
+ */
+function netPerPerson(data: MyBalances, currency: string): {owed: number; owe: number} {
+  const per = new Map<string, number>();
+  for (const g of data.groups) {
+    if (g.currency !== currency) {
+      continue;
+    }
+    for (const p of g.people) {
+      if (p.amount_minor === 0) {
+        continue;
+      }
+      // Friends without a SplitMate account can't be netted across groups.
+      const key = p.member.user_id ?? `${g.group_id}-${p.member.id}`;
+      per.set(key, (per.get(key) ?? 0) + p.amount_minor);
+    }
+  }
+  let owed = 0;
+  let owe = 0;
+  for (const v of per.values()) {
+    if (v > 0) {
+      owed += v;
+    } else if (v < 0) {
+      owe += -v;
+    }
+  }
+  return {owed, owe};
+}
+
+interface NetRow {
+  key: string;
+  name: string;
+  hue: number;
+  amount: number; // net across groups: + they owe me, − I owe them
+  currency: string;
+  groupCount: number;
+  firstGroup: {groupId: string; memberId: string};
+  singleGroupName: string;
+}
+
+/**
+ * Who owes you and whom you owe, netted per person across groups (autocut), largest
+ * first. Money still settles per group, so a netted row opens Balances where each
+ * group has its own settle action; single-group rows settle directly.
  */
 function PeopleCard({waiting, rows}: {waiting: number; rows: number}) {
   const nav = useNavigation();
   const {colors} = useTheme();
   const q = useMyBalancesQuery(undefined, {refetchOnFocus: true, refetchOnMountOrArgChange: 30});
-  const people = (q.data?.groups ?? [])
-    .flatMap(g => g.people.map(p => ({...p, group: g})))
-    .filter(p => p.amount_minor !== 0)
-    .sort((a, b) => Math.abs(b.amount_minor) - Math.abs(a.amount_minor));
+  const people = (() => {
+    const net = new Map<string, NetRow>();
+    for (const g of q.data?.groups ?? []) {
+      for (const p of g.people) {
+        if (p.amount_minor === 0) {
+          continue;
+        }
+        const key = p.member.user_id ? `${p.member.user_id}-${g.currency}` : `${g.group_id}-${p.member.id}`;
+        const row = net.get(key);
+        if (row) {
+          row.amount += p.amount_minor;
+          row.groupCount += 1;
+        } else {
+          net.set(key, {
+            key,
+            name: p.member.display_name,
+            hue: p.member.avatar_hue,
+            amount: p.amount_minor,
+            currency: g.currency,
+            groupCount: 1,
+            firstGroup: {groupId: g.group_id, memberId: p.member.id},
+            singleGroupName: g.group_name,
+          });
+        }
+      }
+    }
+    return [...net.values()]
+      .filter(r => r.amount !== 0)
+      .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  })();
   return (
     <View style={[styles.people, {backgroundColor: colors.surface, borderColor: colors.border}]}>
       <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
@@ -131,29 +205,32 @@ function PeopleCard({waiting, rows}: {waiting: number; rows: number}) {
         </Text>
       ) : (
         people.slice(0, rows).map(p => {
-          const owesMe = p.amount_minor > 0;
+          const owesMe = p.amount > 0;
+          const netted = p.groupCount > 1;
           return (
-            <View key={`${p.group.group_id}-${p.member.id}`} style={styles.personRow}>
-              <Avatar name={p.member.display_name} hue={p.member.avatar_hue} size={34} />
+            <View key={p.key} style={styles.personRow}>
+              <Avatar name={p.name} hue={p.hue} size={34} />
               <View style={{flex: 1}}>
                 <Text variant="bodyStrong" numberOfLines={1}>
-                  {p.member.display_name}
+                  {p.name}
                 </Text>
                 <Text variant="caption" tone={owesMe ? 'positive' : 'negative'} numberOfLines={1}>
-                  {owesMe ? 'owes you' : 'you owe'} {formatMoney(Math.abs(p.amount_minor), p.group.currency)} · {p.group.group_name}
+                  {owesMe ? 'owes you' : 'you owe'} {formatMoney(Math.abs(p.amount), p.currency)} · {netted ? `net across ${p.groupCount} groups` : p.singleGroupName}
                 </Text>
               </View>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${owesMe ? 'Request' : 'Pay'} ${p.member.display_name}`}
+                accessibilityLabel={`${owesMe ? 'Request' : 'Pay'} ${p.name}`}
                 onPress={() =>
-                  nav.navigate('SettleUp', {
-                    groupId: p.group.group_id,
-                    memberId: p.member.id,
-                    currency: p.group.currency,
-                    amount: Math.abs(p.amount_minor),
-                    mode: owesMe ? 'request' : 'record',
-                  })
+                  netted
+                    ? nav.navigate('Balances')
+                    : nav.navigate('SettleUp', {
+                        groupId: p.firstGroup.groupId,
+                        memberId: p.firstGroup.memberId,
+                        currency: p.currency,
+                        amount: Math.abs(p.amount),
+                        mode: owesMe ? 'request' : 'record',
+                      })
                 }
                 style={[styles.settle, {backgroundColor: owesMe ? colors.highlight : colors.text}]}>
                 <Text variant="smallStrong" color={owesMe ? colors.highlightText : colors.bg}>
